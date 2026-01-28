@@ -16,6 +16,20 @@ def interpretar_gasto(texto_usuario):
     fecha_antier = (hoy - timedelta(days=2)).strftime("%Y-%m-%d")
     dia_semana = hoy.strftime("%A")
 
+    # --- TU DICCIONARIO PERSONAL ---
+    # Agrega aquí tus reglas. La IA buscará esto primero.
+    diccionario_personal = """
+    REGLAS DE CATEGORIZACIÓN:
+    - Si dice "promo", "piscola", "copete", "disco", "entrada", "tabaco", "papelillos", "filtros" -> Categoría: "Carrete"
+    - Si dice "uber", "didi", "cabify", "metro", "bip", "scooter", "pasaje bus" -> Categoría: "Transporte"
+    - Si dice "jumbo", "lider", "mercado" -> Categoría: "Supermercado"
+    - Si dice "padel", "futbol", "cancha" -> Categoría: "Deporte"
+    - Si dice "icloud" -> Categoría: "Suscripción"
+    - Si dice "pasaje", "pasaje avion" -> Categoría: "Pasaje"
+    - Si dice "regalo" -> Categoría: "Regalo"
+    - Si dice "peluqueria" -> Categoría: "Peluqueria"
+    """
+    
     # 2. Prompt con instrucciones de fecha claras
     prompt = f"""
     HOY es {dia_semana}, {fecha_hoy}.
@@ -37,8 +51,11 @@ def interpretar_gasto(texto_usuario):
        - Si dice "antier" o "antes de ayer", pon "{fecha_antier}".
        - Si NO dice fecha, pon "{fecha_hoy}".
        - Formato: YYYY-MM-DD.
-
-    5. Item, Categoría y Detalle.
+    5. CATEGORÍA (Usa tu inteligencia + este diccionario):
+       {diccionario_personal}
+       - Si el item NO está en las reglas anteriores, inventa una categoría lógica (ej: "Comida", "Farmacia").
+    6. Item: Extrae el producto o servicio.
+    7. Detalle: Información extra (ej: "con amigos").
 
     Responde JSON:
     {{
