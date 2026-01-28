@@ -8,6 +8,19 @@ CLAVE_OPENAI = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(api_key=CLAVE_OPENAI)
 
+# --- NUEVA FUNCIÓN: TRANSCRIPCIÓN DE AUDIO (WHISPER) ---
+def transcribir_audio(ruta_audio):
+    try:
+        with open(ruta_audio, "rb") as archivo:
+            transcripcion = client.audio.transcriptions.create(
+                model="whisper-1", 
+                file=archivo
+            )
+        return transcripcion.text
+    except Exception as e:
+        print(f"❌ Error al transcribir: {e}")
+        return ""
+
 def interpretar_gasto(texto_usuario):
     # 1. Calculamos las fechas exactas con Python
     hoy = datetime.now()
