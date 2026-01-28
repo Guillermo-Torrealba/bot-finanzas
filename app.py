@@ -1,3 +1,4 @@
+# Actualizacion Audio V2
 import os
 import time
 import threading # <--- IMPORTANTE: La herramienta para trabajar en paralelo
