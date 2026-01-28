@@ -1,6 +1,11 @@
-Flask
+flask
+gunicorn
 requests
+pandas
 openai
 gspread
 oauth2client
-gunicorn
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
