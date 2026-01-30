@@ -3,7 +3,7 @@ import threading
 from flask import Flask, request
 import requests
 from cerebro_chatgpt import interpretar_gasto, normalizar_cuenta, transcribir_audio, decidir_intencion, analizar_consultas_ia
-from cerebro_sheets import guardar_en_sheets, obtener_gastos_mes_actual. obtener_presupuestos
+from cerebro_sheets import guardar_en_sheets, obtener_gastos_mes_actual, obtener_presupuestos
 
 app = Flask(__name__)
 
@@ -195,4 +195,5 @@ def enviar_whatsapp(numero, texto):
 
 if __name__ == "__main__":
     app.run(port=5000)
+
 
