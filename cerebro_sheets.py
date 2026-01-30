@@ -79,4 +79,27 @@ def obtener_gastos_mes_actual():
     except Exception as e:
         print(f"❌ Error CRÍTICO leyendo Sheets: {e}")
         return None
-    
+
+def obtener_presupuestos():
+    """
+    Descarga la hoja 'Presupuestos' y la convierte en un diccionario.
+    Ejemplo: {'Transporte': 50000, 'Carrete': 80000}
+    """
+    try:
+        client = get_sheet().client # Usamos el cliente ya autenticado
+        # Abrimos la hoja por ID pero buscamos la pestaña específica
+        sheet = client.open_by_key(SHEET_ID).worksheet("Presupuestos")
+        registros = sheet.get_all_records()
+        
+        presupuestos = {}
+        for fila in registros:
+            # Limpiamos el monto por si pusiste signos $ o puntos
+            monto_limpio = str(fila['Monto']).replace('$','').replace('.','')
+            if monto_limpio.isdigit():
+                presupuestos[fila['Categoria'].lower()] = int(monto_limpio)
+        
+        return presupuestos
+    except Exception as e:
+        print(f"❌ Error leyendo presupuestos: {e}")
+        return {}
+
