@@ -19,19 +19,20 @@ def get_sheet():
     return sheet
 
 def guardar_en_sheets(datos_gasto):
-    try:
+    try:  # <--- Nivel 1
         sheet = get_sheet()
-        # Orden de las columnas en tu Excel:
-        # Fecha | Item | Monto | Categoria | Cuenta | Detalle | Tipo
+        
+        # Fíjate que 'fila' debe estar alineado con 'sheet'
         fila = [
-                datos_gasto['tipo'],        # Columna A
-                datos_gasto['monto'],       # Columna B
-                datos_gasto['item'],        # Columna C
-                datos_gasto['categoria'],   # Columna D
-                datos_gasto['fecha'],       # Columna E
-                datos_gasto['cuenta'],      # Columna F
-                datos_gasto.get('detalle', '') # Columna G
-                ]
+            datos_gasto['tipo'],         
+            datos_gasto['monto'],       
+            datos_gasto['item'],
+            datos_gasto['categoria'],
+            datos_gasto['fecha'],
+            datos_gasto['cuenta'],
+            datos_gasto.get('detalle', '')
+        ]  # <--- El corchete de cierre alineado con 'fila'
+
         sheet.append_row(fila)
         print(f"💾 Guardado en Sheets: {fila}")
         return True
@@ -102,5 +103,6 @@ def obtener_presupuestos():
     except Exception as e:
         print(f"❌ Error leyendo presupuestos: {e}")
         return {}
+
 
 
