@@ -8,6 +8,19 @@ CLAVE_OPENAI = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(api_key=CLAVE_OPENAI)
 
+# --- NUEVA FUNCIÓN: TRANSCRIPCIÓN DE AUDIO (WHISPER) ---
+def transcribir_audio(ruta_audio):
+    try:
+        with open(ruta_audio, "rb") as archivo:
+            transcripcion = client.audio.transcriptions.create(
+                model="whisper-1", 
+                file=archivo
+            )
+        return transcripcion.text
+    except Exception as e:
+        print(f"❌ Error al transcribir: {e}")
+        return ""
+
 def interpretar_gasto(texto_usuario):
     # 1. Calculamos las fechas exactas con Python
     hoy = datetime.now()
@@ -16,6 +29,20 @@ def interpretar_gasto(texto_usuario):
     fecha_antier = (hoy - timedelta(days=2)).strftime("%Y-%m-%d")
     dia_semana = hoy.strftime("%A")
 
+    # --- TU DICCIONARIO PERSONAL ---
+    # Agrega aquí tus reglas. La IA buscará esto primero.
+    diccionario_personal = """
+    REGLAS DE CATEGORIZACIÓN:
+    - Si dice "promo", "piscola", "copete", "disco", "entrada", "tabaco", "papelillos", "filtros" -> Categoría: "Carrete"
+    - Si dice "uber", "didi", "cabify", "metro", "bip", "scooter", "pasaje bus" -> Categoría: "Transporte"
+    - Si dice "jumbo", "lider", "mercado" -> Categoría: "Supermercado"
+    - Si dice "padel", "futbol", "cancha" -> Categoría: "Deporte"
+    - Si dice "icloud" -> Categoría: "Suscripción"
+    - Si dice "pasaje", "pasaje avion" -> Categoría: "Pasaje"
+    - Si dice "regalo" -> Categoría: "Regalo"
+    - Si dice "peluqueria" -> Categoría: "Peluqueria"
+    """
+    
     # 2. Prompt con instrucciones de fecha claras
     prompt = f"""
     HOY es {dia_semana}, {fecha_hoy}.
@@ -37,8 +64,11 @@ def interpretar_gasto(texto_usuario):
        - Si dice "antier" o "antes de ayer", pon "{fecha_antier}".
        - Si NO dice fecha, pon "{fecha_hoy}".
        - Formato: YYYY-MM-DD.
-
-    5. Item, Categoría y Detalle.
+    5. CATEGORÍA (Usa tu inteligencia + este diccionario):
+       {diccionario_personal}
+       - Si el item NO está en las reglas anteriores, inventa una categoría lógica (ej: "Comida", "Farmacia").
+    6. Item: Extrae el producto o servicio.
+    7. Detalle: Información extra (ej: "con amigos").
 
     Responde JSON:
     {{
@@ -89,4 +119,8 @@ def normalizar_cuenta(texto_corto):
         )
         return response.choices[0].message.content.strip()
     except:
+        return "Efectivo"
+        return response.choices[0].message.content.strip()
+    except:
+
         return "Efectivo"
