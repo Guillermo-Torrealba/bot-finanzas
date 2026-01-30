@@ -3,6 +3,7 @@ import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from datetime import datetime
+import pandas as pd
 
 def guardar_en_sheets(datos):
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -48,3 +49,31 @@ def guardar_en_sheets(datos):
     sheet.append_row(fila)
 
     return True
+
+def obtener_gastos_mes_actual():
+    """
+    Descarga los datos de Google Sheets y los convierte en un DataFrame de Pandas.
+    Filtra solo los datos del mes actual para no sobrecargar a la IA.
+    """
+    try:
+        # Descargar todos los registros de la hoja "Gastos"
+        registros = sheet.get_all_records()
+        
+        if not registros:
+            return None
+
+        # Convertir a DataFrame (Tabla inteligente)
+        df = pd.DataFrame(registros)
+
+        # Limpieza de datos básica
+        # Convertir columna 'monto' a números (quitando signos $ y puntos)
+        # Ojo: Ajusta esto si tus columnas se llaman diferente en el Excel
+        if 'monto' in df.columns:
+            df['monto'] = df['monto'].astype(str).str.replace(r'[$,.]', '', regex=True)
+            df['monto'] = pd.to_numeric(df['monto'], errors='coerce').fillna(0)
+
+        return df
+    except Exception as e:
+        print(f"❌ Error leyendo Sheets: {e}")
+        return None
+
