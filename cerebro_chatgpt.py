@@ -1,97 +1,129 @@
-import os
-import json
 from openai import OpenAI
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
+import os
 
-# Configuración de la API Key
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# --- PON TU CLAVE ---
+CLAVE_OPENAI = os.getenv("OPENAI_API_KEY") 
 
+client = OpenAI(api_key=CLAVE_OPENAI)
+
+# --- NUEVA FUNCIÓN: TRANSCRIPCIÓN DE AUDIO (WHISPER) ---
 def transcribir_audio(ruta_audio):
-    """
-    Toma la ruta de un archivo de audio (ogg/mp3/wav) y devuelve el texto transcrito usando Whisper.
-    """
-    print(f"🎤 Iniciando transcripción de: {ruta_audio}")
     try:
-        with open(ruta_audio, "rb") as audio_file:
-            transcript = client.audio.transcriptions.create(
+        with open(ruta_audio, "rb") as archivo:
+            transcripcion = client.audio.transcriptions.create(
                 model="whisper-1", 
-                file=audio_file,
-                language="es"  # Forzamos español para mejor precisión
+                file=archivo
             )
-            texto = transcript.text
-            print(f"📝 Texto detectado: {texto}")
-            return texto
+        return transcripcion.text
     except Exception as e:
-        print(f"❌ Error CRÍTICO en transcripción: {e}")
+        print(f"❌ Error al transcribir: {e}")
         return ""
 
-def interpretar_gasto(mensaje):
+def interpretar_gasto(texto_usuario):
+    # 1. Calculamos las fechas exactas con Python
+    hoy = datetime.now()
+    fecha_hoy = hoy.strftime("%Y-%m-%d")
+    fecha_ayer = (hoy - timedelta(days=1)).strftime("%Y-%m-%d")
+    fecha_antier = (hoy - timedelta(days=2)).strftime("%Y-%m-%d")
+    dia_semana = hoy.strftime("%A")
+
+    # --- TU DICCIONARIO PERSONAL ---
+    # Agrega aquí tus reglas. La IA buscará esto primero.
+    diccionario_personal = """
+    REGLAS DE CATEGORIZACIÓN:
+    - Si dice "promo", "piscola", "copete", "disco", "entrada", "tabaco", "papelillos", "filtros" -> Categoría: "Carrete"
+    - Si dice "uber", "didi", "cabify", "metro", "bip", "scooter", "pasaje bus" -> Categoría: "Transporte"
+    - Si dice "jumbo", "lider", "mercado" -> Categoría: "Supermercado"
+    - Si dice "padel", "futbol", "cancha" -> Categoría: "Deporte"
+    - Si dice "icloud" -> Categoría: "Suscripción"
+    - Si dice "pasaje", "pasaje avion" -> Categoría: "Pasaje"
+    - Si dice "regalo" -> Categoría: "Regalo"
+    - Si dice "peluqueria" -> Categoría: "Peluqueria"
     """
-    Analiza el mensaje y extrae los datos del gasto (item, monto, cuenta).
-    """
-    hoy = datetime.now().strftime("%Y-%m-%d")
     
+    # 2. Prompt con instrucciones de fecha claras
     prompt = f"""
-    Eres un asistente contable experto. Tu única tarea es extraer datos de gastos de un texto informal.
-    Hoy es: {hoy}.
+    HOY es {dia_semana}, {fecha_hoy}.
+    AYER fue: {fecha_ayer}
+    ANTEAYER fue: {fecha_antier}
 
-    Analiza el siguiente texto: "{mensaje}"
+    Analiza: "{texto_usuario}"
+    
+    TAREAS:
+    1. Tipo: "Gasto" o "Ingreso".
+    2. MONTO (Reglas de Oro):
+       - Si el usuario dice "lucas", "mil" o "k" (ej: "3 lucas", "5k"), MULTIPLICA el número por 1000.
+         (Ejemplo: "3 lucas" -> 3000).
+       - Si el usuario pone un número solo (ej: "3500"), úsalo EXACTO. NO multipliques.
+    3. Cuenta: ['Débito BICE', 'Crédito BICE', 'Mercado Pago', 'Efectivo']. (Si no dice, null).
+    
+    4. FECHA OBLIGATORIA:
+       - Si dice "ayer", DEBES poner "{fecha_ayer}".
+       - Si dice "antier" o "antes de ayer", pon "{fecha_antier}".
+       - Si NO dice fecha, pon "{fecha_hoy}".
+       - Formato: YYYY-MM-DD.
+    5. CATEGORÍA (Usa tu inteligencia + este diccionario):
+       {diccionario_personal}
+       - Si el item NO está en las reglas anteriores, inventa una categoría lógica (ej: "Comida", "Farmacia").
+    6. Item: Extrae el producto o servicio.
+    7. Detalle: Información extra (ej: "con amigos").
 
-    Reglas OBLIGATORIAS:
-    1. Responde SOLO en formato JSON.
-    2. El JSON debe tener esta estructura exacta:
-       {{
-         "gastos": [
-           {{
-             "fecha": "YYYY-MM-DD",
-             "item": "descripcion breve",
-             "monto": 12345 (numero entero, sin puntos ni signos),
-             "cuenta": "nombre_cuenta_normalizado" (o null si no se menciona),
-             "moneda": "CLP"
-           }}
-         ]
-       }}
-    3. Si el usuario menciona "ayer", calcula la fecha correcta.
-    4. "Cuenta" debe normalizarse a una de estas si es posible: "Banco Falabella", "Santander", "Efectivo", "Tarjeta de Crédito", "Mercado Pago". Si no sabes, pon null.
-    5. Si el monto es 0 o no aparece, pon 0.
+    Responde JSON:
+    {{
+        "gastos": [
+            {{
+                "tipo": "Gasto",
+                "monto": 0,
+                "item": "str",
+                "categoria": "str",
+                "cuenta": null,
+                "fecha": "YYYY-MM-DD",
+                "detalle": "str"
+            }}
+        ]
+    }}
     """
 
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Eres una API que solo responde JSON."},
-                {"role": "user", "content": prompt}
-            ],
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
             temperature=0
         )
+        texto = response.choices[0].message.content.replace("```json", "").replace("```", "").strip()
+        datos = json.loads(texto)
         
-        contenido = response.choices[0].message.content
-        # Limpieza por si GPT pone ```json ... ```
-        contenido = contenido.replace("```json", "").replace("```", "").strip()
+        # --- DIAGNÓSTICO: ESTO SALDRÁ EN TU TERMINAL ---
+        print(f"🧠 CEREBRO PENSÓ: {datos}") 
+        # -----------------------------------------------
         
-        datos = json.loads(contenido)
         return datos
 
     except Exception as e:
-        print(f"❌ Error en GPT: {e}")
-        return {"gastos": [{"item": "Error", "monto": 0, "cuenta": None}]}
+        print(f"❌ Error ChatGPT: {e}")
+        return {"gastos": []}
 
-def normalizar_cuenta(texto):
+def normalizar_cuenta(texto_corto):
+    prompt = f"""
+    Normaliza este medio de pago: "{texto_corto}"
+    Opciones: ['Débito BICE', 'Crédito BICE', 'Mercado Pago', 'Efectivo', 'Santander']
+    Responde solo el nombre oficial.
     """
-    Intenta adivinar la cuenta basándose en palabras clave.
-    """
-    texto = texto.lower()
-    if "falabella" in texto:
-        return "Banco Falabella"
-    elif "santander" in texto:
-        return "Santander"
-    elif "chile" in texto:
-        return "Banco de Chile"
-    elif "efectivo" in texto or "cash" in texto:
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
+        )
+        return response.choices[0].message.content.strip()
+    except:
+        return "Efectivo"
         return "Efectivo"
     elif "mercado" in texto:
         return "Mercado Pago"
     else:
         return "Banco Falabella" # Valor por defecto si no se sabe
+
 
