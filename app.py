@@ -2,7 +2,6 @@ import os
 import threading
 from flask import Flask, request
 import requests
-# Importamos las nuevas funciones
 from cerebro_chatgpt import interpretar_gasto, normalizar_cuenta, transcribir_audio, decidir_intencion, analizar_consultas_ia
 from cerebro_sheets import guardar_en_sheets, obtener_gastos_mes_actual
 
@@ -36,7 +35,7 @@ def descargar_audio_whatsapp(media_id):
         return None
 
 def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id, audio_id=None):
-    print(f"🔄 Procesando... (Tipo: {tipo_mensaje})")
+    print(f"🔄 Procesando mensaje de {numero}...")
     
     # 1. SI ES AUDIO, TRANSCRIBIR PRIMERO
     if (tipo_mensaje == "audio" or tipo_mensaje == "voice") and audio_id:
@@ -55,43 +54,54 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
         return
 
     try:
-        # 2. DECIDIR: ¿ES GASTO O CONSULTA?
+        # --- CORRECCIÓN CRÍTICA: MEMORIA PRIMERO ---
+        # Antes de pensar con IA, revisamos si el usuario nos debía una respuesta.
+        if numero in memoria_usuarios:
+            print(f"📝 Usuario {numero} tenía algo pendiente. Completando...")
+            gasto_pendiente = memoria_usuarios[numero]
+            
+            # Normalizamos lo que respondiste (ej: "debito" -> "Débito BICE")
+            cuenta_limpia = normalizar_cuenta(texto_usuario)
+            gasto_pendiente['cuenta'] = cuenta_limpia
+            
+            guardar_en_sheets(gasto_pendiente)
+            del memoria_usuarios[numero] # Borramos de la memoria porque ya terminó
+            enviar_whatsapp(numero, f"✅ Listo. ${gasto_pendiente['monto']} en **{cuenta_limpia}**.")
+            return # TERMINAMOS AQUÍ. No seguimos al Router.
+
+        # 2. SI NO HAY PENDIENTES, USAMOS EL ROUTER
         intencion = decidir_intencion(texto_usuario)
         print(f"🧠 Intención detectada: {intencion}")
 
         if intencion == "CONSULTA":
-            # --- MODO ANALISTA ---
             enviar_whatsapp(numero, "🧐 Déjame revisar tus números...")
-            df = obtener_gastos_mes_actual() # Traemos los datos de Sheets
-            respuesta = analizar_consultas_ia(texto_usuario, df) # La IA piensa
-            enviar_whatsapp(numero, respuesta) # Respondemos
+            df = obtener_gastos_mes_actual() 
+            respuesta = analizar_consultas_ia(texto_usuario, df)
+            enviar_whatsapp(numero, respuesta)
 
         elif intencion == "GASTO":
-            # --- MODO SECRETARIO (TU CÓDIGO ANTERIOR) ---
-            if numero in memoria_usuarios:
-                gasto_pendiente = memoria_usuarios[numero]
-                cuenta_limpia = normalizar_cuenta(texto_usuario)
-                gasto_pendiente['cuenta'] = cuenta_limpia
-                guardar_en_sheets(gasto_pendiente)
-                del memoria_usuarios[numero]
-                enviar_whatsapp(numero, f"✅ Listo. ${gasto_pendiente['monto']} en **{cuenta_limpia}**.")
-            else:
-                respuesta_ia = interpretar_gasto(texto_usuario)
-                if respuesta_ia.get("gastos"):
-                    gasto = respuesta_ia["gastos"][0]
-                    if gasto['monto'] == 0:
-                        enviar_whatsapp(numero, f"👂 Escuché: '{texto_usuario}'\n🤷‍♂️ Pero no entendí el monto.")
-                    elif not gasto.get('cuenta'):
-                        memoria_usuarios[numero] = gasto
-                        enviar_whatsapp(numero, f"🤔 Entendido: {gasto['item']} (${gasto['monto']}).\n\n¿Con qué pagaste?")
-                    else:
-                        guardar_en_sheets(gasto)
-                        enviar_whatsapp(numero, f"✅ Listo! {gasto['item']} (${gasto['monto']}) anotado en {gasto['cuenta']}.")
+            respuesta_ia = interpretar_gasto(texto_usuario)
+            if respuesta_ia.get("gastos"):
+                gasto = respuesta_ia["gastos"][0]
+                
+                # Caso 1: Falta el monto
+                if gasto['monto'] == 0:
+                    enviar_whatsapp(numero, f"👂 Escuché: '{texto_usuario}'\n🤷‍♂️ Pero no entendí el monto.")
+                
+                # Caso 2: Falta la cuenta (AQUÍ ENTRA TU CASO)
+                elif not gasto.get('cuenta'):
+                    memoria_usuarios[numero] = gasto # Guardamos en memoria
+                    enviar_whatsapp(numero, f"🤔 Entendido: {gasto['item']} (${gasto['monto']}).\n\n¿Con qué pagaste?")
+                
+                # Caso 3: Todo listo
                 else:
-                    enviar_whatsapp(numero, "👋 No entendí si es un gasto.")
+                    guardar_en_sheets(gasto)
+                    enviar_whatsapp(numero, f"✅ Listo! {gasto['item']} (${gasto['monto']}) anotado en {gasto['cuenta']}.")
+            else:
+                enviar_whatsapp(numero, "👋 No entendí si es un gasto.")
         
         else:
-            enviar_whatsapp(numero, "👋 ¡Hola! Soy tu bot de finanzas. Dime un gasto o hazme una pregunta sobre tu presupuesto.")
+            enviar_whatsapp(numero, "👋 ¡Hola! Soy tu bot de finanzas. Dime un gasto (ej: 'gaste 5 lucas') o hazme una pregunta.")
 
     except Exception as e:
         print(f"❌ Error lógica: {e}")
@@ -141,4 +151,3 @@ def enviar_whatsapp(numero, texto):
 
 if __name__ == "__main__":
     app.run(port=5000)
-
