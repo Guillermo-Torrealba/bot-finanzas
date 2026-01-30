@@ -3,7 +3,7 @@ import threading
 from flask import Flask, request
 import requests
 from cerebro_chatgpt import interpretar_gasto, normalizar_cuenta, transcribir_audio, decidir_intencion, analizar_consultas_ia
-from cerebro_sheets import guardar_en_sheets, obtener_gastos_mes_actual
+from cerebro_sheets import guardar_en_sheets, obtener_gastos_mes_actual. obtener_presupuestos
 
 app = Flask(__name__)
 
@@ -17,7 +17,51 @@ mensajes_procesados = {}
 @app.route("/")
 def home():
     return "¡Hola! El bot de finanzas está VIVO y PENSANDO 🤖🧠", 200
+    
+# --- NUEVO: RUTA PARA CRON-JOB (ALERTAS) ---
+@app.route("/check_alertas", methods=["GET"])
+def chequear_presupuestos():
+    try:
+        # 1. Traer datos
+        df_gastos = obtener_gastos_mes_actual()
+        presupuestos = obtener_presupuestos()
+        
+        if df_gastos is None or not presupuestos:
+            return "No hay datos o presupuestos para revisar.", 200
 
+        # 2. Sumar gastos por categoría (agrupamos y sumamos montos)
+        # Convertimos categoria a minusculas para comparar peras con peras
+        df_gastos['categoria'] = df_gastos['categoria'].str.lower()
+        resumen = df_gastos.groupby('categoria')['monto'].sum().to_dict()
+
+        alertas = []
+        
+        # 3. Comparar
+        for cat_presupuesto, limite in presupuestos.items():
+            gasto_actual = resumen.get(cat_presupuesto, 0)
+            porcentaje = (gasto_actual / limite) * 100
+            
+            if porcentaje >= 100:
+                alertas.append(f"🚨 **{cat_presupuesto.title()}**: ${gasto_actual} (¡Te pasaste! 💀)")
+            elif porcentaje >= 80:
+                alertas.append(f"⚠️ **{cat_presupuesto.title()}**: ${gasto_actual} ({int(porcentaje)}% del límite)")
+
+        # 4. Enviar reporte si hay alertas
+        if alertas:
+            mensaje_final = "📢 *REPORTE DE GASTOS:*\n\n" + "\n".join(alertas)
+            # Reemplaza con TU NÚMERO REAL (Formato: 569XXXXXXXX)
+            # Como esto lo dispara un robot, necesitamos saber a quién enviarle.
+            # Puedes usar una variable de entorno o ponerlo a fuego aquí por ahora.
+            mi_numero = "56972900632"  # <--- ¡CAMBIA ESTO!
+            enviar_whatsapp(mi_numero, mensaje_final)
+            return f"Alertas enviadas: {len(alertas)}", 200
+        else:
+            return "Todo bajo control. No hay alertas.", 200
+
+    except Exception as e:
+        print(f"❌ Error en alertas: {e}")
+        return f"Error: {e}", 500
+        
 def descargar_audio_whatsapp(media_id):
     try:
         url_info = f"https://graph.facebook.com/v21.0/{media_id}"
@@ -151,3 +195,4 @@ def enviar_whatsapp(numero, texto):
 
 if __name__ == "__main__":
     app.run(port=5000)
+
