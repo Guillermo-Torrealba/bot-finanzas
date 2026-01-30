@@ -24,14 +24,14 @@ def guardar_en_sheets(datos_gasto):
         # Orden de las columnas en tu Excel:
         # Fecha | Item | Monto | Categoria | Cuenta | Detalle | Tipo
         fila = [
-            datos_gasto['fecha'],
-            datos_gasto['item'],
-            datos_gasto['monto'],
-            datos_gasto['categoria'],
-            datos_gasto['cuenta'],
-            datos_gasto.get('detalle', ''),
-            datos_gasto['tipo']
-        ]
+                datos_gasto['tipo'],        # Columna A
+                datos_gasto['monto'],       # Columna B
+                datos_gasto['item'],        # Columna C
+                datos_gasto['categoria'],   # Columna D
+                datos_gasto['fecha'],       # Columna E
+                datos_gasto['cuenta'],      # Columna F
+                datos_gasto.get('detalle', '') # Columna G
+                ]
         sheet.append_row(fila)
         print(f"💾 Guardado en Sheets: {fila}")
         return True
@@ -102,4 +102,5 @@ def obtener_presupuestos():
     except Exception as e:
         print(f"❌ Error leyendo presupuestos: {e}")
         return {}
+
 
