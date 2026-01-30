@@ -1,79 +1,82 @@
 import os
-import json
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
 import pandas as pd
+import json
 
-def guardar_en_sheets(datos):
-    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-    
-    # --- LÓGICA HÍBRIDA (PC vs NUBE) ---
-    if os.path.exists("credenciales.json"):
-        # Estamos en tu PC
-        creds = ServiceAccountCredentials.from_json_keyfile_name("credenciales.json", scope)
-    else:
-        # Estamos en la Nube (Render)
-        # Leeremos el JSON desde una variable oculta
-        json_info = json.loads(os.getenv("GOOGLE_CREDENTIALS_JSON"))
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(json_info, scope)
-    
+# --- CONFIGURACIÓN GOOGLE SHEETS ---
+CREDS_JSON = os.getenv("GOOGLE_SHEETS_CREDS_JSON")
+SHEET_ID = os.getenv("SPREADSHEET_ID")
+
+scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+
+def get_sheet():
+    creds_dict = json.loads(CREDS_JSON)
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
     client = gspread.authorize(creds)
-    sheet = client.open("Finanzas Personales").sheet1
-    
-    # ... (El resto de tu lógica de fechas y guardado sigue IGUAL hacia abajo) ...
-    # Copia aquí tu lógica de fechas y append_row que ya tenías funcionando
-    
-    # --- LÓGICA DE FECHA (Pégala aquí igual que antes) ---
-    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
-    fecha_ia = datos.get('fecha') 
+    # Abre la hoja por ID y selecciona la primera pestaña (Sheet1)
+    sheet = client.open_by_key(SHEET_ID).sheet1
+    return sheet
 
-    if fecha_ia and fecha_ia != fecha_hoy:
-        fecha_final = f"{fecha_ia} 12:00"
-    else:
-        fecha_final = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-    fila = [
-        datos.get('tipo', 'Gasto'),
-        datos.get('monto', 0),
-        datos.get('item', 'Varios'),
-        datos.get('categoria', 'General'),
-        fecha_final,
-        datos.get('cuenta', 'Principal'),
-        datos.get('detalle', '')
-    ]
-
-    sheet.append_row(fila)
-    return True
-
-    sheet.append_row(fila)
-
-    return True
+def guardar_en_sheets(datos_gasto):
+    try:
+        sheet = get_sheet()
+        # Orden de las columnas en tu Excel:
+        # Fecha | Item | Monto | Categoria | Cuenta | Detalle | Tipo
+        fila = [
+            datos_gasto['fecha'],
+            datos_gasto['item'],
+            datos_gasto['monto'],
+            datos_gasto['categoria'],
+            datos_gasto['cuenta'],
+            datos_gasto.get('detalle', ''),
+            datos_gasto['tipo']
+        ]
+        sheet.append_row(fila)
+        print(f"💾 Guardado en Sheets: {fila}")
+        return True
+    except Exception as e:
+        print(f"❌ Error guardando en Sheets: {e}")
+        return False
 
 def obtener_gastos_mes_actual():
     """
-    Descarga los datos de Google Sheets y los convierte en un DataFrame de Pandas.
-    Filtra solo los datos del mes actual para no sobrecargar a la IA.
+    Descarga los datos para análisis.
     """
+    print("📊 Intentando descargar datos de Sheets...")
     try:
-        # Descargar todos los registros de la hoja "Gastos"
+        sheet = get_sheet()
         registros = sheet.get_all_records()
         
+        print(f"📊 Registros brutos encontrados: {len(registros)}")
+
         if not registros:
+            print("⚠️ La hoja parece estar vacía o get_all_records devolvió lista vacía.")
             return None
 
-        # Convertir a DataFrame (Tabla inteligente)
         df = pd.DataFrame(registros)
+        
+        # CHISMOSO: Imprimir las columnas que detectó Pandas
+        print(f"📊 Columnas detectadas: {list(df.columns)}")
 
-        # Limpieza de datos básica
-        # Convertir columna 'monto' a números (quitando signos $ y puntos)
-        # Ojo: Ajusta esto si tus columnas se llaman diferente en el Excel
-        if 'monto' in df.columns:
-            df['monto'] = df['monto'].astype(str).str.replace(r'[$,.]', '', regex=True)
-            df['monto'] = pd.to_numeric(df['monto'], errors='coerce').fillna(0)
+        # Limpieza básica de montos
+        # Busca columnas que parezcan montos (Monto, monto, Valor, Precio)
+        col_monto = None
+        for col in df.columns:
+            if "monto" in col.lower() or "valor" in col.lower():
+                col_monto = col
+                break
+        
+        if col_monto:
+            df[col_monto] = df[col_monto].astype(str).str.replace(r'[$,.]', '', regex=True)
+            df[col_monto] = pd.to_numeric(df[col_monto], errors='coerce').fillna(0)
+            print(f"✅ Columna de montos '{col_monto}' procesada.")
+        else:
+            print("⚠️ No encontré una columna de 'Monto' o 'Valor'.")
 
         return df
-    except Exception as e:
-        print(f"❌ Error leyendo Sheets: {e}")
-        return None
 
+    except Exception as e:
+        print(f"❌ Error CRÍTICO leyendo Sheets: {e}")
+        return None
+    
