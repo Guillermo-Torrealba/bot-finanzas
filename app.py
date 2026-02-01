@@ -5,6 +5,7 @@ import requests
 from cerebro_chatgpt import interpretar_gasto, normalizar_cuenta, transcribir_audio
 # from cerebro_sheets import guardar_en_sheets  <-- ESTO YA NO SE USA
 from cerebro_supabase import guardar_gasto    # <-- ESTO ES LO NUEVO
+#hola
 
 app = Flask(__name__)
 
