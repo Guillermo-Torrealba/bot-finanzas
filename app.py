@@ -4,7 +4,8 @@ import threading
 from flask import Flask, request
 import requests
 from cerebro_chatgpt import interpretar_gasto, normalizar_cuenta, transcribir_audio
-from cerebro_sheets import guardar_en_sheets
+# from cerebro_sheets import guardar_en_sheets  <-- ESTO YA NO SE USA
+from cerebro_supabase import guardar_gasto    # <-- ESTO ES LO NUEVO
 
 app = Flask(__name__)
 
@@ -55,7 +56,7 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
                 os.remove(archivo_temporal)
             except:
                 pass
-            texto_usuario = texto_transcrito # ¡Reemplazo mágico!
+            texto_usuario = texto_transcrito 
         else:
             enviar_whatsapp(numero, "❌ Error al descargar audio.")
             return
@@ -66,26 +67,45 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
             enviar_whatsapp(numero, "🤷‍♂️ Audio vacío o no se escuchó nada.")
             return
 
+        # CASO A: EL USUARIO ESTÁ RESPONDIENDO QUÉ CUENTA USÓ
         if numero in memoria_usuarios:
             gasto_pendiente = memoria_usuarios[numero]
             cuenta_limpia = normalizar_cuenta(texto_usuario)
             gasto_pendiente['cuenta'] = cuenta_limpia
-            guardar_en_sheets(gasto_pendiente)
+            
+            # --- CAMBIO AQUÍ ---
+            exito = guardar_gasto(gasto_pendiente) 
+            # -------------------
+
             del memoria_usuarios[numero]
-            enviar_whatsapp(numero, f"✅ Listo. ${gasto_pendiente['monto']} en **{cuenta_limpia}**.")
+            
+            if exito:
+                enviar_whatsapp(numero, f"✅ Listo. ${gasto_pendiente['monto']} en **{cuenta_limpia}** (Guardado en Nube ☁️).")
+            else:
+                enviar_whatsapp(numero, "❌ Hubo un error guardando en Supabase.")
         
+        # CASO B: MENSAJE NUEVO
         else:
             respuesta_ia = interpretar_gasto(texto_usuario)
             if respuesta_ia.get("gastos"):
                 gasto = respuesta_ia["gastos"][0]
+                
                 if gasto['monto'] == 0:
                     enviar_whatsapp(numero, f"👂 Escuché: '{texto_usuario}'\n🤷‍♂️ Pero no entendí el monto.")
+                
                 elif not gasto.get('cuenta'):
                     memoria_usuarios[numero] = gasto
                     enviar_whatsapp(numero, f"🤔 Entendido: {gasto['item']} (${gasto['monto']}).\n\n¿Con qué pagaste?")
+                
                 else:
-                    guardar_en_sheets(gasto)
-                    enviar_whatsapp(numero, f"✅ Listo! {gasto['item']} (${gasto['monto']}) anotado en {gasto['cuenta']}.")
+                    # --- CAMBIO AQUÍ ---
+                    exito = guardar_gasto(gasto)
+                    # -------------------
+
+                    if exito:
+                        enviar_whatsapp(numero, f"✅ Listo! {gasto['item']} (${gasto['monto']}) anotado en {gasto['cuenta']}.")
+                    else:
+                        enviar_whatsapp(numero, "❌ Error guardando en la base de datos.")
             else:
                 enviar_whatsapp(numero, "👋 No entendí si es un gasto.")
 
@@ -113,11 +133,9 @@ def recibir_mensaje():
                     return "EVENT_RECEIVED", 200
                 mensajes_procesados[msg_id] = True
                 
-                # --- EXTRACCIÓN ROBUSTA ---
                 numero = mensaje["from"]
                 tipo = mensaje["type"]
                 
-                # EL CHISMOSO: ESTO SALDRÁ EN LOS LOGS
                 print(f"👀 MENSAJE RECIBIDO DE {numero}. TIPO: '{tipo}'")
                 
                 texto_usuario = ""
@@ -127,7 +145,7 @@ def recibir_mensaje():
                     texto_usuario = mensaje["text"]["body"]
                 elif tipo == "audio":
                     audio_id = mensaje["audio"]["id"]
-                elif tipo == "voice": # Soporte extra
+                elif tipo == "voice": 
                     audio_id = mensaje["voice"]["id"]
                 
                 if texto_usuario or audio_id:
