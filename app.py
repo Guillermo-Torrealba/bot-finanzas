@@ -1,5 +1,4 @@
 import os
-import time
 import threading
 from flask import Flask, request
 import requests
@@ -16,6 +15,11 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "un_secreto_cualquiera_123")
 
 memoria_usuarios = {} 
 mensajes_procesados = {} 
+
+# --- NUEVO: LA BIENVENIDA (Para que Cron-job no se enoje) ---
+@app.route("/")
+def home():
+    return "¡Hola! El bot de finanzas está VIVO y ESCUCHANDO 🤖🎧", 200
 
 # --- FUNCIÓN: DESCARGAR AUDIO ---
 def descargar_audio_whatsapp(media_id):
@@ -42,7 +46,7 @@ def descargar_audio_whatsapp(media_id):
 
 # --- CEREBRO EN SEGUNDO PLANO ---
 def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id, audio_id=None):
-    print(f"🔄 Procesando en segundo plano... (Tipo: {tipo_mensaje})")
+    print(f"🔄 Procesando... (Tipo: {tipo_mensaje})")
     
     # --- BLOQUE DE AUDIO ---
     if (tipo_mensaje == "audio" or tipo_mensaje == "voice") and audio_id:
@@ -56,15 +60,14 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
                 os.remove(archivo_temporal)
             except:
                 pass
-            texto_usuario = texto_transcrito 
+            texto_usuario = texto_transcrito # ¡Reemplazo mágico!
         else:
-            enviar_whatsapp(numero, "❌ Error al descargar audio.")
+            enviar_whatsapp(numero, "❌ No pude descargar el audio de WhatsApp.")
             return
     # -----------------------
 
     try:
         if not texto_usuario:
-            enviar_whatsapp(numero, "🤷‍♂️ Audio vacío o no se escuchó nada.")
             return
 
         # CASO A: EL USUARIO ESTÁ RESPONDIENDO QUÉ CUENTA USÓ
@@ -136,6 +139,7 @@ def recibir_mensaje():
                 numero = mensaje["from"]
                 tipo = mensaje["type"]
                 
+                # EL CHISMOSO: ESTO SALDRÁ EN LOS LOGS
                 print(f"👀 MENSAJE RECIBIDO DE {numero}. TIPO: '{tipo}'")
                 
                 texto_usuario = ""
@@ -151,19 +155,20 @@ def recibir_mensaje():
                 if texto_usuario or audio_id:
                     hilo = threading.Thread(target=procesar_mensaje_background, args=(numero, texto_usuario, tipo, msg_id, audio_id))
                     hilo.start()
-                else:
-                    print(f"⚠️ Mensaje ignorado porque no es texto ni audio (es {tipo})")
 
         return "EVENT_RECEIVED", 200
     except Exception as e:
-        print(f"❌ Error crítico webhook: {e}")
+        print(f"❌ Error webhook: {e}")
         return "EVENT_RECEIVED", 200
 
 def enviar_whatsapp(numero, texto):
-    url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
-    headers = {"Authorization": f"Bearer {TOKEN_WHATSAPP}", "Content-Type": "application/json"}
-    data = {"messaging_product": "whatsapp", "to": numero, "type": "text", "text": {"body": texto}}
-    requests.post(url, headers=headers, json=data)
+    try:
+        url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
+        headers = {"Authorization": f"Bearer {TOKEN_WHATSAPP}", "Content-Type": "application/json"}
+        data = {"messaging_product": "whatsapp", "to": numero, "type": "text", "text": {"body": texto}}
+        requests.post(url, headers=headers, json=data)
+    except Exception as e:
+        print(f"Error enviando Whatsapp: {e}")
 
 if __name__ == "__main__":
     app.run(port=5000)
