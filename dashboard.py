@@ -85,12 +85,13 @@ with st.expander("➕ Nuevo Movimiento (Gasto o Ingreso)", expanded=False):
         
         # Categorías dinámicas según el tipo
         if tipo == "Gasto":
-            cats = ["Comida", "Transporte", "Hogar", "Ocio", "Salud", "Cuentas", "Varios"]
+            cats = ["Comida", "Transporte", "Regalos", "Suscripciones", "Carrete", "Panoramas", "Ropa", "Bencina", "Salud","Deportes",
+            "Peluquería","Supermercado", "Varios"]
         else:
-            cats = ["Sueldo", "Freelance", "Regalo", "Ventas", "Inversión"]
+            cats = ["Sueldo", "Mesada", "Regalo", "Ventas", "Inversión", "Devoluciones"]
             
         categoria = col5.selectbox("Categoría", cats)
-        cuenta = col6.selectbox("Cuenta", ["Débito BICE", "Crédito BICE", "Efectivo", "Cuenta RUT"])
+        cuenta = col6.selectbox("Cuenta", ["Débito BICE", "Crédito BICE", "Efectivo", "Mercado Pago"])
         
         if st.form_submit_button("💾 Guardar Movimiento"):
             guardar_movimiento(item, monto, categoria, cuenta, fecha, tipo)

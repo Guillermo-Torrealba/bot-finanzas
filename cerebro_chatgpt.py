@@ -37,10 +37,9 @@ def interpretar_gasto(texto_usuario):
     - Si dice "uber", "didi", "cabify", "metro", "bip", "scooter", "pasaje bus" -> Categoría: "Transporte"
     - Si dice "jumbo", "lider", "mercado" -> Categoría: "Supermercado"
     - Si dice "padel", "futbol", "cancha" -> Categoría: "Deporte"
-    - Si dice "icloud" -> Categoría: "Suscripción"
-    - Si dice "pasaje", "pasaje avion" -> Categoría: "Pasaje"
-    - Si dice "regalo" -> Categoría: "Regalo"
-    - Si dice "peluqueria" -> Categoría: "Peluqueria"
+    - Si dice "icloud" -> Categoría: "Suscripciones"
+    - Si dice "regalo" -> Categoría: "Regalos"
+    - Si dice "peluqueria" -> Categoría: "Peluquería"
     """
     
     # 2. Prompt con instrucciones de fecha claras
@@ -64,9 +63,17 @@ def interpretar_gasto(texto_usuario):
        - Si dice "antier" o "antes de ayer", pon "{fecha_antier}".
        - Si NO dice fecha, pon "{fecha_hoy}".
        - Formato: YYYY-MM-DD.
-    5. CATEGORÍA (Usa tu inteligencia + este diccionario):
-       {diccionario_personal}
-       - Si el item NO está en las reglas anteriores, inventa una categoría lógica (ej: "Comida", "Farmacia").
+5. CATEGORÍA:
+       - Primero revisa este diccionario de reglas personales: {diccionario_personal}
+       - Si el item está ahí, usa esa categoría exacta.
+       - Si NO está ahí, clasifica el gasto OBLIGATORIAMENTE en una de estas categorías maestras:
+         ['Comida', 'Transporte', 'Regalos', 'Suscripciones', 'Carrete', 'Panoramas', 'Ropa', 'Bencina', 'Salud', 'Deportes', 'Peluquería', 'Supermercado', 'Varios']
+       - REGLAS DE CLASIFICACIÓN:
+         * "Carrete": Alcohol, fiestas, salidas nocturnas, bares.
+         * "Panoramas": Cine, conciertos, salidas diurnas, entretenimiento.
+         * "Supermercado": Compras de mercadería para la casa.
+         * "Comida": Restaurantes, delivery, comida rápida.
+       - Si no encaja en ninguna, usa 'Varios'.
     6. Item: Extrae el producto o servicio.
     7. Detalle: Información extra (ej: "con amigos").
 
