@@ -32,7 +32,7 @@ def interpretar_gasto(texto_usuario):
     # --- TU DICCIONARIO PERSONAL ---
     # Agrega aquí tus reglas. La IA buscará esto primero.
     diccionario_personal = """
-    REGLAS DE CATEGORIZACIÓN:
+    REGLAS DE CATEGORIZACIÓN PARA GASTOS:
     - Si dice "promo", "piscola", "copete", "disco", "entrada", "tabaco", "papelillos", "filtros" -> Categoría: "Carrete"
     - Si dice "uber", "didi", "cabify", "metro", "bip", "scooter", "pasaje bus" -> Categoría: "Transporte"
     - Si dice "jumbo", "lider", "mercado" -> Categoría: "Supermercado"
@@ -40,6 +40,16 @@ def interpretar_gasto(texto_usuario):
     - Si dice "icloud" -> Categoría: "Suscripciones"
     - Si dice "regalo" -> Categoría: "Regalos"
     - Si dice "peluqueria" -> Categoría: "Peluquería"
+
+    REGLAS DE CATEGORIZACIÓN PARA INGRESOS:
+    - Si dice "sueldo", "pega", "trabajo", "nómina", "salario" -> Categoría: "Sueldo"
+    - Si dice "freelance", "proyecto", "cliente", "honorarios" -> Categoría: "Freelance"
+    - Si dice "transferencia", "me mandaron", "me depositaron", "me pagaron" -> Categoría: "Transferencia Recibida"
+    - Si dice "reembolso", "devolución", "me devolvieron" -> Categoría: "Reembolso"
+    - Si dice "arriendo", "alquiler" -> Categoría: "Arriendo"
+    - Si dice "vendí", "venta" -> Categoría: "Venta"
+    - Si dice "inversión", "dividendo", "intereses", "rendimiento" -> Categoría: "Inversiones"
+    - Si dice "mesada" -> Categoría: "Mesada"
     """
     
     # 2. Prompt con instrucciones de fecha claras
@@ -69,16 +79,30 @@ def interpretar_gasto(texto_usuario):
        - Si NO dice fecha, pon "{fecha_hoy}".
        - Formato: YYYY-MM-DD.
 5. CATEGORÍA:
-       - Primero revisa este diccionario de reglas personales: {diccionario_personal}
-       - Si el item está ahí, usa esa categoría exacta.
-       - Si NO está ahí, clasifica el gasto OBLIGATORIAMENTE en una de estas categorías maestras:
-         ['Comida', 'Transporte', 'Regalos', 'Suscripciones', 'Carrete', 'Panoramas', 'Ropa', 'Bencina', 'Salud', 'Deportes', 'Peluquería', 'Supermercado', 'Varios']
-       - REGLAS DE CLASIFICACIÓN:
-         * "Carrete": Alcohol, fiestas, salidas nocturnas, bares.
-         * "Panoramas": Cine, conciertos, salidas diurnas, entretenimiento.
-         * "Supermercado": Compras de mercadería para la casa.
-         * "Comida": Restaurantes, delivery, comida rápida.
-       - Si no encaja en ninguna, usa 'Varios'.
+        - Primero revisa este diccionario de reglas personales: {diccionario_personal}
+        - Si el item está ahí, usa esa categoría exacta.
+        - Si NO está en el diccionario, clasifica según el TIPO:
+
+          ** Si es GASTO, usa OBLIGATORIAMENTE una de estas categorías:
+          ['Comida', 'Transporte', 'Regalos', 'Suscripciones', 'Carrete', 'Panoramas', 'Ropa', 'Bencina', 'Salud', 'Deportes', 'Peluquería', 'Supermercado', 'Varios']
+          REGLAS para gastos:
+            * "Carrete": Alcohol, fiestas, salidas nocturnas, bares.
+            * "Panoramas": Cine, conciertos, salidas diurnas, entretenimiento.
+            * "Supermercado": Compras de mercadería para la casa.
+            * "Comida": Restaurantes, delivery, comida rápida.
+            * Si no encaja en ninguna, usa 'Varios'.
+
+          ** Si es INGRESO, usa OBLIGATORIAMENTE una de estas categorías:
+          ['Sueldo', 'Freelance', 'Transferencia Recibida', 'Inversiones', 'Reembolso', 'Arriendo', 'Venta', 'Otros Ingresos']
+          REGLAS para ingresos:
+            * "Sueldo": Salario mensual, quincena, pago de trabajo fijo.
+            * "Freelance": Pagos por trabajos independientes, proyectos, honorarios.
+            * "Transferencia Recibida": Dinero que te mandan, depósitos de terceros.
+            * "Inversiones": Dividendos, rendimientos, intereses.
+            * "Reembolso": Devoluciones de dinero.
+            * "Arriendo": Ingresos por arriendo de propiedades.
+            * "Venta": Dinero recibido por vender algo.
+            * Si no encaja en ninguna, usa 'Otros Ingresos'.
     6. Item: Extrae el producto o servicio.
     7. Detalle: Información extra (ej: "con amigos").
 
