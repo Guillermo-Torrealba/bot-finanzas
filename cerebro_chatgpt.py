@@ -102,6 +102,7 @@ def interpretar_gasto(texto_usuario):
             * "Reembolso": Devoluciones de dinero.
             * "Arriendo": Ingresos por arriendo de propiedades.
             * "Venta": Dinero recibido por vender algo.
+            * "Mesada": Dinero recibido por mesada.
             * Si no encaja en ninguna, usa 'Otros Ingresos'.
     6. Item: Extrae el producto o servicio.
     7. Detalle: Información extra (ej: "con amigos").
