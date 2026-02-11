@@ -34,6 +34,7 @@ def guardar_gasto(datos_gasto):
             "monto": datos_gasto['monto'],       # Asegúrate que en Supabase sea tipo numero
             "categoria": datos_gasto['categoria'],
             "cuenta": datos_gasto['cuenta'],
+            "metodo_pago": datos_gasto.get('metodo_pago'),
             "detalle": datos_gasto.get('detalle', ''),
             "tipo": datos_gasto['tipo']
         }

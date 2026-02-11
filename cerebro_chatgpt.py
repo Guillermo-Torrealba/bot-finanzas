@@ -56,7 +56,12 @@ def interpretar_gasto(texto_usuario):
        - Si el usuario dice "lucas", "mil" o "k" (ej: "3 lucas", "5k"), MULTIPLICA el número por 1000.
          (Ejemplo: "3 lucas" -> 3000).
        - Si el usuario pone un número solo (ej: "3500"), úsalo EXACTO. NO multipliques.
-    3. Cuenta: ['Débito BICE', 'Crédito BICE', 'Mercado Pago', 'Efectivo']. (Si no dice, null).
+    3. Cuenta: ['Banco BICE', 'Mercado Pago']. (Si no dice, null).
+       - "Banco BICE" = cualquier referencia a BICE, banco, tarjeta BICE, etc.
+       - "Mercado Pago" = cualquier referencia a mercado pago, MP, etc.
+    3b. Método de pago (metodo_pago): ['Débito', 'Crédito']. (Si no dice, null).
+       - Si dice "débito", "debito", "tarjeta de débito" -> "Débito"
+       - Si dice "crédito", "credito", "tarjeta de crédito" -> "Crédito"
     
     4. FECHA OBLIGATORIA:
        - Si dice "ayer", DEBES poner "{fecha_ayer}".
@@ -86,6 +91,7 @@ def interpretar_gasto(texto_usuario):
                 "item": "str",
                 "categoria": "str",
                 "cuenta": null,
+                "metodo_pago": null,
                 "fecha": "YYYY-MM-DD",
                 "detalle": "str"
             }}
@@ -115,7 +121,7 @@ def interpretar_gasto(texto_usuario):
 def normalizar_cuenta(texto_corto):
     prompt = f"""
     Normaliza este medio de pago: "{texto_corto}"
-    Opciones: ['Débito BICE', 'Crédito BICE', 'Mercado Pago', 'Efectivo', 'Santander']
+    Opciones de cuenta: ['Banco BICE', 'Mercado Pago']
     Responde solo el nombre oficial.
     """
     try:
@@ -126,4 +132,4 @@ def normalizar_cuenta(texto_corto):
         )
         return response.choices[0].message.content.strip()
     except:
-        return "Efectivo"
+        return None
