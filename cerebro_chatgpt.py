@@ -70,15 +70,16 @@ def interpretar_gasto(texto_usuario):
        - "Banco BICE" = cualquier referencia a BICE, banco, tarjeta BICE, etc.
        - "Mercado Pago" = cualquier referencia a mercado pago, MP, etc.
     3b. Método de pago (metodo_pago): ['Débito', 'Crédito']. (Si no dice, null).
-       - Si dice "débito", "debito", "tarjeta de débito" -> "Débito"
-       - Si dice "crédito", "credito", "tarjeta de crédito" -> "Crédito"
+       - Si dice "débito", "debito", "Debito", "debito bice", "tarjeta de débito" -> "Débito"
+       - Si dice "crédito", "credito", "Credito", "credito bice", "tarjeta de crédito" -> "Crédito"
     
     4. FECHA OBLIGATORIA:
        - Si dice "ayer", DEBES poner "{fecha_ayer}".
        - Si dice "antier" o "antes de ayer", pon "{fecha_antier}".
        - Si NO dice fecha, pon "{fecha_hoy}".
        - Formato: YYYY-MM-DD.
-5. CATEGORÍA:
+
+    5. CATEGORÍA:
         - Primero revisa este diccionario de reglas personales: {diccionario_personal}
         - Si el item está ahí, usa esa categoría exacta.
         - Si NO está en el diccionario, clasifica según el TIPO:
@@ -104,8 +105,15 @@ def interpretar_gasto(texto_usuario):
             * "Venta": Dinero recibido por vender algo.
             * "Mesada": Dinero recibido por mesada.
             * Si no encaja en ninguna, usa 'Otros Ingresos'.
-    6. Item: Extrae el producto o servicio.
-    7. Detalle: Información extra (ej: "con amigos").
+
+    6. ITEM (Nombre Corto):
+       - Extrae SOLO el nombre del comercio, producto o servicio principal.
+       - Debe ser corto y conciso (Ej: "Uber", "Starbucks", "Jumbo", "Transferencia").
+
+    7. DETALLE (Contexto):
+       - Extrae la descripción narrativa o el "para qué".
+       - Si el usuario dice "Uber a casa de Juan", Item="Uber", Detalle="Viaje a casa de Juan".
+       - Si el usuario NO da detalles, repite el item o pon "Sin detalles".
 
     Responde JSON:
     {{
