@@ -6,6 +6,7 @@ import requests
 from cerebro_chatgpt import interpretar_gasto, normalizar_cuenta, transcribir_audio, analizar_consulta
 # AGREGADO: 'obtener_ultimos_gastos'
 from cerebro_supabase import guardar_gasto, supabase, obtener_ultimos_gastos
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -83,22 +84,61 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
 
     # --- 3. LÓGICA DE GASTOS Y PREGUNTAS ---
     try:
-        # CASO A: EL USUARIO ESTÁ RESPONDIENDO QUÉ CUENTA USÓ (Hilo de conversación)
+        # CASO A: EL USUARIO ESTÁ RESPONDIENDO (HILO DE CONVERSACIÓN)
         if numero in memoria_usuarios:
-            gasto_pendiente = memoria_usuarios[numero]
-            cuenta_limpia = normalizar_cuenta(texto_usuario)
-            gasto_pendiente['cuenta'] = cuenta_limpia
-            
-            # INYECTAMOS EL ID
-            gasto_pendiente['user_id'] = user_id_detectado
+            contexto = memoria_usuarios[numero]
 
-            exito = guardar_gasto(gasto_pendiente) 
-            del memoria_usuarios[numero]
-            
-            if exito:
-                enviar_whatsapp(numero, f"✅ Listo. ${gasto_pendiente['monto']} en **{cuenta_limpia}**.")
+            # >>> SUB-CASO A.1: ES RESPUESTA DE APPLE PAY (Completar detalle) 🍏 <<<
+            if contexto.get("step") == "completar_detalle":
+                print(f"🍏 Completando Apple Pay para {numero}")
+                
+                # 1. Usamos la IA para categorizar tu detalle (ej: 'Cervezas' -> 'Carrete')
+                # Creamos una frase falsa para que la IA entienda el contexto
+                frase_contexto = f"Gaste {contexto['monto']} en {texto_usuario}"
+                analisis_ia = interpretar_gasto(frase_contexto)
+                
+                categoria_final = "Varios"
+                if analisis_ia.get("gastos"):
+                    categoria_final = analisis_ia["gastos"][0]["categoria"]
+
+                # 2. Armamos el gasto final
+                gasto_apple_pay = {
+                    "fecha": datetime.now().strftime("%Y-%m-%d"),
+                    "monto": int(contexto["monto"]),
+                    "item": contexto["item"],      # El comercio (ej: Sociedad Comercial)
+                    "detalle": texto_usuario,      # Lo que tú respondiste (ej: Completos)
+                    "categoria": categoria_final,  # Lo que decidió la IA
+                    "cuenta": contexto["cuenta"],  # "Banco BICE" (o lo que pusiste en app.py)
+                    "metodo_pago": "Crédito",      # Asumimos crédito por ser Apple Pay
+                    "tipo": "Gasto",
+                    "user_id": user_id_detectado
+                }
+
+                # 3. Guardamos y limpiamos memoria
+                exito = guardar_gasto(gasto_apple_pay)
+                del memoria_usuarios[numero]
+
+                if exito:
+                    enviar_whatsapp(numero, f"✅ Listo Apple Pay. ${gasto_apple_pay['monto']} en **{texto_usuario}** ({categoria_final}).")
+                else:
+                    enviar_whatsapp(numero, "❌ Hubo un error guardando el gasto de Apple Pay.")
+
+            # >>> SUB-CASO A.2: ES RESPUESTA DE GASTO NORMAL (Completar cuenta) <<<
             else:
-                enviar_whatsapp(numero, "❌ Hubo un error guardando en Supabase.")
+                gasto_pendiente = contexto
+                cuenta_limpia = normalizar_cuenta(texto_usuario)
+                gasto_pendiente['cuenta'] = cuenta_limpia
+                
+                # INYECTAMOS EL ID
+                gasto_pendiente['user_id'] = user_id_detectado
+
+                exito = guardar_gasto(gasto_pendiente) 
+                del memoria_usuarios[numero]
+                
+                if exito:
+                    enviar_whatsapp(numero, f"✅ Listo. ${gasto_pendiente['monto']} en **{cuenta_limpia}**.")
+                else:
+                    enviar_whatsapp(numero, "❌ Hubo un error guardando en Supabase.")
         
         # CASO B: MENSAJE NUEVO
         else:
@@ -202,3 +242,37 @@ def enviar_whatsapp(numero, texto):
 
 if __name__ == "__main__":
     app.run(port=5000)
+
+@app.route("/apple-pay", methods=["POST"])
+def apple_pay_trigger():
+    try:
+        datos = request.get_json()
+        telefono = datos.get("telefono")
+        monto = datos.get("monto", "0")
+        comercio = datos.get("comercio", "Comercio")
+        
+        if not telefono:
+            return "Falta teléfono", 400
+
+        print(f"🍏 Apple Pay con datos: {monto} en {comercio}")
+        
+        # 1. Guardamos el contexto en memoria para esperar tu respuesta
+        # Guardamos el monto y comercio como si fuera un 'gasto pendiente'
+        memoria_usuarios[telefono] = {
+            "monto": monto,
+            "item": comercio,      # Usamos el nombre del comercio como item temporal
+            "cuenta": "Apple Pay", # O 'Banco BICE' por defecto
+            "fecha": None,         # Se llenará después
+            "tipo": "Gasto",
+            "step": "completar_detalle" # Marca especial para saber que falta el detalle
+        }
+
+        # 2. El Bot te pregunta
+        mensaje = f"💸 Detecté un pago de **${monto}** en **{comercio}**.\n\n¿Qué compraste? (Ej: 'Café', 'Regalo', 'Super')"
+        enviar_whatsapp(telefono, mensaje)
+        
+        return "Solicitud recibida", 200
+
+    except Exception as e:
+        print(f"❌ Error en Apple Pay Trigger: {e}")
+        return "Error", 500
