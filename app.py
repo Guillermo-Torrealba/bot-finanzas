@@ -85,49 +85,48 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
     # --- 3. LÓGICA DE GASTOS Y PREGUNTAS ---
     try:
         # CASO A: EL USUARIO ESTÁ RESPONDIENDO (HILO DE CONVERSACIÓN)
-# ... dentro de procesar_mensaje_background ...
-    if numero in memoria_usuarios:
-        contexto = memoria_usuarios[numero]
+        if numero in memoria_usuarios:
+            contexto = memoria_usuarios[numero]
 
-        # PASO 1: Recibimos el nombre limpio del gasto (Item)
-        if contexto.get("step") == "esperando_item_apple":
-            contexto["item_limpio"] = texto_usuario
-            contexto["step"] = "esperando_metodo_apple" # Pasamos al siguiente paso
-            enviar_whatsapp(numero, "Perfecto. ¿Fue con **Débito** o **Crédito**?")
-            return # Salimos para esperar la siguiente respuesta
+            # PASO 1: Recibimos el nombre limpio del gasto (Item)
+            if contexto.get("step") == "esperando_item_apple":
+                contexto["item_limpio"] = texto_usuario
+                contexto["step"] = "esperando_metodo_apple" # Pasamos al siguiente paso
+                enviar_whatsapp(numero, "Perfecto. ¿Fue con **Débito** o **Crédito**?")
+                return # Salimos para esperar la siguiente respuesta
 
-        # PASO 2: Recibimos el método de pago y guardamos todo
-        elif contexto.get("step") == "esperando_metodo_apple":
-            print(f"✅ Finalizando gasto Apple Pay para {numero}")
-            
-            # Usamos tu lógica de IA para categorizar según el item limpio
-            frase_para_ia = f"Gaste {contexto['monto']} en {contexto['item_limpio']}"
-            analisis_ia = interpretar_gasto(frase_contexto)
-            
-            categoria = "Varios"
-            if analisis_ia.get("gastos"):
-                categoria = analisis_ia["gastos"][0]["categoria"]
+            # PASO 2: Recibimos el método de pago y guardamos todo
+            elif contexto.get("step") == "esperando_metodo_apple":
+                print(f"✅ Finalizando gasto Apple Pay para {numero}")
+                
+                # Usamos tu lógica de IA para categorizar según el item limpio
+                frase_para_ia = f"Gaste {contexto['monto']} en {contexto['item_limpio']}"
+                analisis_ia = interpretar_gasto(frase_para_ia)
+                
+                categoria = "Varios"
+                if analisis_ia.get("gastos"):
+                    categoria = analisis_ia["gastos"][0]["categoria"]
 
-            # Armamos el objeto final como querías
-            gasto_final = {
-                "fecha": datetime.now().strftime("%Y-%m-%d"),
-                "monto": int(float(contexto["monto"])), # Limpieza de número
-                "item": contexto["item_limpio"],        # Tu respuesta limpia (Café)
-                "detalle": contexto["detalle"],         # El nombre del iPhone (Sociedad X)
-                "categoria": categoria,
-                "cuenta": "Banco BICE",
-                "metodo_pago": "Crédito" if "cred" in texto_usuario.lower() else "Débito",
-                "tipo": "Gasto",
-                "user_id": user_id_detectado
-            }
+                # Armamos el objeto final como querías
+                gasto_final = {
+                    "fecha": datetime.now().strftime("%Y-%m-%d"),
+                    "monto": int(float(contexto["monto"])), # Limpieza de número
+                    "item": contexto["item_limpio"],        # Tu respuesta limpia (Café)
+                    "detalle": contexto["detalle"],         # El nombre del iPhone (Sociedad X)
+                    "categoria": categoria,
+                    "cuenta": "Banco BICE",
+                    "metodo_pago": "Crédito" if "cred" in texto_usuario.lower() else "Débito",
+                    "tipo": "Gasto",
+                    "user_id": user_id_detectado
+                }
 
-            exito = guardar_gasto(gasto_final)
-            del memoria_usuarios[numero] # Limpiamos memoria
+                exito = guardar_gasto(gasto_final)
+                del memoria_usuarios[numero] # Limpiamos memoria
 
-            if exito:
-                enviar_whatsapp(numero, f"✅ Guardado: **{gasto_final['item']}** (${gasto_final['monto']}) pagado con {gasto_final['metodo_pago']}.")
-            else:
-                enviar_whatsapp(numero, "❌ Error al guardar en la base de datos.")
+                if exito:
+                    enviar_whatsapp(numero, f"✅ Guardado: **{gasto_final['item']}** (${gasto_final['monto']}) pagado con {gasto_final['metodo_pago']}.")
+                else:
+                    enviar_whatsapp(numero, "❌ Error al guardar en la base de datos.")
 
             # >>> SUB-CASO A.2: ES RESPUESTA DE GASTO NORMAL (Completar cuenta) <<<
             else:
