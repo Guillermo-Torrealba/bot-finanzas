@@ -85,43 +85,49 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
     # --- 3. LÓGICA DE GASTOS Y PREGUNTAS ---
     try:
         # CASO A: EL USUARIO ESTÁ RESPONDIENDO (HILO DE CONVERSACIÓN)
-        if numero in memoria_usuarios:
-            contexto = memoria_usuarios[numero]
+# ... dentro de procesar_mensaje_background ...
+    if numero in memoria_usuarios:
+        contexto = memoria_usuarios[numero]
 
-            # >>> SUB-CASO A.1: ES RESPUESTA DE APPLE PAY (Completar detalle) 🍏 <<<
-            if contexto.get("step") == "completar_detalle":
-                print(f"🍏 Completando Apple Pay para {numero}")
-                
-                # 1. Usamos la IA para categorizar tu detalle (ej: 'Cervezas' -> 'Carrete')
-                # Creamos una frase falsa para que la IA entienda el contexto
-                frase_contexto = f"Gaste {contexto['monto']} en {texto_usuario}"
-                analisis_ia = interpretar_gasto(frase_contexto)
-                
-                categoria_final = "Varios"
-                if analisis_ia.get("gastos"):
-                    categoria_final = analisis_ia["gastos"][0]["categoria"]
+        # PASO 1: Recibimos el nombre limpio del gasto (Item)
+        if contexto.get("step") == "esperando_item_apple":
+            contexto["item_limpio"] = texto_usuario
+            contexto["step"] = "esperando_metodo_apple" # Pasamos al siguiente paso
+            enviar_whatsapp(numero, "Perfecto. ¿Fue con **Débito** o **Crédito**?")
+            return # Salimos para esperar la siguiente respuesta
 
-                # 2. Armamos el gasto final
-                gasto_apple_pay = {
-                    "fecha": datetime.now().strftime("%Y-%m-%d"),
-                    "monto": int(contexto["monto"]),
-                    "item": contexto["item"],      # El comercio (ej: Sociedad Comercial)
-                    "detalle": texto_usuario,      # Lo que tú respondiste (ej: Completos)
-                    "categoria": categoria_final,  # Lo que decidió la IA
-                    "cuenta": contexto["cuenta"],  # "Banco BICE" (o lo que pusiste en app.py)
-                    "metodo_pago": "Crédito",      # Asumimos crédito por ser Apple Pay
-                    "tipo": "Gasto",
-                    "user_id": user_id_detectado
-                }
+        # PASO 2: Recibimos el método de pago y guardamos todo
+        elif contexto.get("step") == "esperando_metodo_apple":
+            print(f"✅ Finalizando gasto Apple Pay para {numero}")
+            
+            # Usamos tu lógica de IA para categorizar según el item limpio
+            frase_para_ia = f"Gaste {contexto['monto']} en {contexto['item_limpio']}"
+            analisis_ia = interpretar_gasto(frase_contexto)
+            
+            categoria = "Varios"
+            if analisis_ia.get("gastos"):
+                categoria = analisis_ia["gastos"][0]["categoria"]
 
-                # 3. Guardamos y limpiamos memoria
-                exito = guardar_gasto(gasto_apple_pay)
-                del memoria_usuarios[numero]
+            # Armamos el objeto final como querías
+            gasto_final = {
+                "fecha": datetime.now().strftime("%Y-%m-%d"),
+                "monto": int(float(contexto["monto"])), # Limpieza de número
+                "item": contexto["item_limpio"],        # Tu respuesta limpia (Café)
+                "detalle": contexto["detalle"],         # El nombre del iPhone (Sociedad X)
+                "categoria": categoria,
+                "cuenta": "Banco BICE",
+                "metodo_pago": "Crédito" if "cred" in texto_usuario.lower() else "Débito",
+                "tipo": "Gasto",
+                "user_id": user_id_detectado
+            }
 
-                if exito:
-                    enviar_whatsapp(numero, f"✅ Listo Apple Pay. ${gasto_apple_pay['monto']} en **{texto_usuario}** ({categoria_final}).")
-                else:
-                    enviar_whatsapp(numero, "❌ Hubo un error guardando el gasto de Apple Pay.")
+            exito = guardar_gasto(gasto_final)
+            del memoria_usuarios[numero] # Limpiamos memoria
+
+            if exito:
+                enviar_whatsapp(numero, f"✅ Guardado: **{gasto_final['item']}** (${gasto_final['monto']}) pagado con {gasto_final['metodo_pago']}.")
+            else:
+                enviar_whatsapp(numero, "❌ Error al guardar en la base de datos.")
 
             # >>> SUB-CASO A.2: ES RESPUESTA DE GASTO NORMAL (Completar cuenta) <<<
             else:
@@ -249,30 +255,22 @@ def apple_pay_trigger():
         datos = request.get_json()
         telefono = datos.get("telefono")
         monto = datos.get("monto", "0")
-        comercio = datos.get("comercio", "Comercio")
+        comercio = datos.get("comercio", "Comercio desconocido")
         
         if not telefono:
             return "Falta teléfono", 400
 
-        print(f"🍏 Apple Pay con datos: {monto} en {comercio}")
-        
-        # 1. Guardamos el contexto en memoria para esperar tu respuesta
-        # Guardamos el monto y comercio como si fuera un 'gasto pendiente'
+        # Guardamos los datos iniciales y saltamos al paso de preguntar el ITEM
         memoria_usuarios[telefono] = {
             "monto": monto,
-            "item": comercio,      # Usamos el nombre del comercio como item temporal
-            "cuenta": "Apple Pay", # O 'Banco BICE' por defecto
-            "fecha": None,         # Se llenará después
-            "tipo": "Gasto",
-            "step": "completar_detalle" # Marca especial para saber que falta el detalle
+            "detalle": comercio,           # El nombre legal va al detalle
+            "step": "esperando_item_apple" # Nueva etapa
         }
 
-        # 2. El Bot te pregunta
-        mensaje = f"💸 Detecté un pago de **${monto}** en **{comercio}**.\n\n¿Qué compraste? (Ej: 'Café', 'Regalo', 'Super')"
+        mensaje = f"💸 Detecté un pago de **${monto}** en _{comercio}_.\n\n¿Qué compraste? (Ej: Café, Almuerzo, Regalo)"
         enviar_whatsapp(telefono, mensaje)
         
-        return "Solicitud recibida", 200
-
+        return "OK", 200
     except Exception as e:
-        print(f"❌ Error en Apple Pay Trigger: {e}")
+        print(f"❌ Error Apple Pay: {e}")
         return "Error", 500
