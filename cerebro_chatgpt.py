@@ -163,60 +163,76 @@ def interpretar_gasto(texto_usuario):
 # --- NUEVA FUNCIÓN: ANALISTA FINANCIERO CON CONTEXTO TEMPORAL 🧠 ---
 def analizar_consulta(texto_usuario, datos_gastos):
     """
-    Recibe la pregunta del usuario y los datos crudos de Supabase.
-    Genera una respuesta en lenguaje natural.
+    1. Calcula los totales matemáticamente con Python (Infalible).
+    2. Le pasa los datos Y los totales calculados a GPT para que responda.
     """
-    # 1. Calculamos la fecha de HOY para dársela al contexto
+    # 1. Contexto de fecha
     hoy_real = datetime.now()
     fecha_hoy_str = hoy_real.strftime("%Y-%m-%d")
-    mes_actual_nombre = hoy_real.strftime("%B") # Ej: February
+    mes_actual_nombre = hoy_real.strftime("%B") 
 
-    # 2. Convertimos los datos a un formato de texto que GPT pueda leer
+    # 2. CÁLCULO MATEMÁTICO EN PYTHON (Aquí está la magia)
+    # Sumamos las categorías antes de pasarle la info a la IA
+    totales_por_categoria = {}
+    gran_total = 0
+    
     tabla_texto = "FECHA | ITEM | MONTO | CATEGORIA | DETALLE\n"
+    
     if not datos_gastos:
         tabla_texto = "No hay registros este mes."
+        resumen_matematico = "No hay gastos registrados."
     else:
         for g in datos_gastos:
-            # Protegemos contra valores nulos con .get
+            monto = g.get('monto', 0)
+            cat = g.get('categoria', 'Sin Categoría')
+            
+            # Sumar al diccionario de totales
+            totales_por_categoria[cat] = totales_por_categoria.get(cat, 0) + monto
+            gran_total += monto
+            
+            # Crear fila para la tabla visual
             fecha = g.get('fecha', '')
             item = g.get('item', '')
-            monto = g.get('monto', 0)
-            cat = g.get('categoria', '')
             detalle = g.get('detalle', '')
             tabla_texto += f"{fecha} | {item} | {monto} | {cat} | {detalle}\n"
 
-    # 3. Creamos el prompt de analista CON FECHAS CLARAS
+        # Creamos el "Torpedo" para la IA
+        resumen_matematico = f"GASTO TOTAL DEL MES: ${gran_total}\n"
+        resumen_matematico += "DESGLOSE EXACTO POR CATEGORÍA (USA ESTOS VALORES):\n"
+        for c, m in totales_por_categoria.items():
+            resumen_matematico += f"- {c}: ${m}\n"
+
+    # 3. Prompt blindado
     prompt_analisis = f"""
-    Actúa como un analista financiero personal amable y chileno.
+    Actúa como un analista financiero personal experto.
     
-    CONTEXTO TEMPORAL:
-    - HOY ES: {fecha_hoy_str} (Mes de {mes_actual_nombre}).
-    - Los datos de abajo son TODOS los movimientos desde el día 1 de este mes hasta hoy.
+    INFORMACIÓN IMPORTANTE (YA CALCULADA):
+    --------------------------------------
+    {resumen_matematico}
+    --------------------------------------
     
-    TABLA DE GASTOS DEL MES:
-    -----------------------------------------------------
+    DETALLE DE MOVIMIENTOS (Desde el 1 de {mes_actual_nombre}):
     {tabla_texto}
-    -----------------------------------------------------
     
     PREGUNTA DEL USUARIO: "{texto_usuario}"
     
-    INSTRUCCIONES:
-    1. Responde la pregunta basándote EXCLUSIVAMENTE en la tabla de datos de arriba.
-    2. Si tienes que sumar, hazlo con cuidado.
-    3. Si no hay datos sobre lo que pregunta, dilo claramente.
-    4. Sé breve y directo (es un mensaje de WhatsApp).
-    5. Usa formato de moneda chilena ($10.000).
+    INSTRUCCIONES DE ORO:
+    1. SI EL USUARIO PIDE UN TOTAL (ej: "Cuánto gasté en Regalos"), NO SUMES TÚ.
+    2. COPIA EL VALOR EXACTO del apartado "DESGLOSE EXACTO POR CATEGORÍA" de arriba.
+    3. Python ya hizo la suma matemática, confía en ese número.
+    4. Si pregunta por un detalle específico (ej: "Qué regalo fue el más caro"), busca en la tabla.
+    5. Responde breve y en pesos chilenos.
     """
 
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "system", "content": prompt_analisis}],
-            temperature=0.3
+            temperature=0
         )
         return response.choices[0].message.content
     except Exception as e:
-        return f"Ups, me mareé analizando los datos: {e}"
+        return f"Ups, error en el análisis: {e}"
 
 def normalizar_cuenta(texto_corto):
     prompt = f"""
