@@ -3,9 +3,8 @@ import threading
 from flask import Flask, request
 import requests
 from cerebro_chatgpt import interpretar_gasto, normalizar_cuenta, transcribir_audio
-# from cerebro_sheets import guardar_en_sheets  <-- ESTO YA NO SE USA
-from cerebro_supabase import guardar_gasto    # <-- ESTO ES LO NUEVO
-#hola
+# IMPORTANTE: Asegúrate de que en cerebro_supabase.py estés exportando la variable 'supabase'
+from cerebro_supabase import guardar_gasto, supabase 
 
 app = Flask(__name__)
 
@@ -17,7 +16,7 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN", "un_secreto_cualquiera_123")
 memoria_usuarios = {} 
 mensajes_procesados = {} 
 
-# --- NUEVO: LA BIENVENIDA (Para que Cron-job no se enoje) ---
+# --- LA BIENVENIDA ---
 @app.route("/")
 def home():
     return "¡Hola! El bot de finanzas está VIVO y ESCUCHANDO 🤖🎧", 200
@@ -45,11 +44,11 @@ def descargar_audio_whatsapp(media_id):
         print(f"❌ Error descarga: {e}")
         return None
 
-# --- CEREBRO EN SEGUNDO PLANO ---
+# --- CEREBRO EN SEGUNDO PLANO (MODIFICADO) ---
 def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id, audio_id=None):
     print(f"🔄 Procesando... (Tipo: {tipo_mensaje})")
     
-    # --- BLOQUE DE AUDIO ---
+    # --- 1. BLOQUE DE AUDIO ---
     if (tipo_mensaje == "audio" or tipo_mensaje == "voice") and audio_id:
         enviar_whatsapp(numero, "🎧 Escuchando...")
         archivo_temporal = descargar_audio_whatsapp(audio_id)
@@ -61,30 +60,44 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
                 os.remove(archivo_temporal)
             except:
                 pass
-            texto_usuario = texto_transcrito # ¡Reemplazo mágico!
+            texto_usuario = texto_transcrito 
         else:
             enviar_whatsapp(numero, "❌ No pude descargar el audio de WhatsApp.")
             return
-    # -----------------------
 
+    if not texto_usuario:
+        return
+
+    # --- 2. BLOQUE DE IDENTIDAD (NUEVO) 🕵️‍♂️ ---
+    # Buscamos quién es el dueño de este número antes de seguir
+    user_id_detectado = None
     try:
-        if not texto_usuario:
-            return
+        # Consultamos la tabla 'usuarios_bot' que creamos
+        resp_usuario = supabase.table("usuarios_bot").select("user_id").eq("celular", numero).execute()
+        if resp_usuario.data:
+            user_id_detectado = resp_usuario.data[0]["user_id"]
+            print(f"✅ Usuario Identificado: {user_id_detectado}")
+        else:
+            print(f"⚠️ Numero {numero} no tiene User ID asignado en 'usuarios_bot'")
+    except Exception as e:
+        print(f"❌ Error buscando identidad: {e}")
 
-        # CASO A: EL USUARIO ESTÁ RESPONDIENDO QUÉ CUENTA USÓ
+    # --- 3. LÓGICA DE GASTOS ---
+    try:
+        # CASO A: EL USUARIO ESTÁ RESPONDIENDO QUÉ CUENTA USÓ (Hilo de conversación)
         if numero in memoria_usuarios:
             gasto_pendiente = memoria_usuarios[numero]
             cuenta_limpia = normalizar_cuenta(texto_usuario)
             gasto_pendiente['cuenta'] = cuenta_limpia
             
-            # --- CAMBIO AQUÍ ---
-            exito = guardar_gasto(gasto_pendiente) 
-            # -------------------
+            # INYECTAMOS EL ID
+            gasto_pendiente['user_id'] = user_id_detectado
 
+            exito = guardar_gasto(gasto_pendiente) 
             del memoria_usuarios[numero]
             
             if exito:
-                enviar_whatsapp(numero, f"✅ Listo. ${gasto_pendiente['monto']} en **{cuenta_limpia}** (Guardado en Nube ☁️).")
+                enviar_whatsapp(numero, f"✅ Listo. ${gasto_pendiente['monto']} en **{cuenta_limpia}**.")
             else:
                 enviar_whatsapp(numero, "❌ Hubo un error guardando en Supabase.")
         
@@ -94,6 +107,9 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
             if respuesta_ia.get("gastos"):
                 gasto = respuesta_ia["gastos"][0]
                 
+                # INYECTAMOS EL ID
+                gasto['user_id'] = user_id_detectado
+                
                 if gasto['monto'] == 0:
                     enviar_whatsapp(numero, f"👂 Escuché: '{texto_usuario}'\n🤷‍♂️ Pero no entendí el monto.")
                 
@@ -102,9 +118,7 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
                     enviar_whatsapp(numero, f"🤔 Entendido: {gasto['item']} (${gasto['monto']}).\n\n¿Con qué pagaste?")
                 
                 else:
-                    # --- CAMBIO AQUÍ ---
                     exito = guardar_gasto(gasto)
-                    # -------------------
 
                     if exito:
                         enviar_whatsapp(numero, f"✅ Listo! {gasto['item']} (${gasto['monto']}) anotado en {gasto['cuenta']}.")
@@ -140,7 +154,6 @@ def recibir_mensaje():
                 numero = mensaje["from"]
                 tipo = mensaje["type"]
                 
-                # EL CHISMOSO: ESTO SALDRÁ EN LOS LOGS
                 print(f"👀 MENSAJE RECIBIDO DE {numero}. TIPO: '{tipo}'")
                 
                 texto_usuario = ""
@@ -154,6 +167,7 @@ def recibir_mensaje():
                     audio_id = mensaje["voice"]["id"]
                 
                 if texto_usuario or audio_id:
+                    # Se usa threading para responder rápido a WhatsApp (200 OK) y procesar lento después
                     hilo = threading.Thread(target=procesar_mensaje_background, args=(numero, texto_usuario, tipo, msg_id, audio_id))
                     hilo.start()
 

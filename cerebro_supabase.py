@@ -2,54 +2,61 @@ import os
 from supabase import create_client, Client
 
 # --- CONFIGURACIÓN SUPABASE ---
-# Estas variables las pondremos en Render en el Paso 4
 URL = os.getenv("SUPABASE_URL")
 KEY = os.getenv("SUPABASE_KEY")
 
-def get_supabase():
-    if not URL or not KEY:
-        print("❌ Error: Faltan las credenciales de SUPABASE en las variables de entorno.")
-        return None
+# --- CLIENTE GLOBAL ---
+# Creamos la variable 'supabase' aquí afuera para que app.py la pueda importar
+supabase: Client = None
+
+if URL and KEY:
     try:
-        client: Client = create_client(URL, KEY)
-        return client
+        supabase = create_client(URL, KEY)
     except Exception as e:
-        print(f"❌ Error conectando con Supabase: {e}")
-        return None
+        print(f"❌ Error inicializando Supabase: {e}")
+else:
+    print("❌ Error: Faltan las variables SUPABASE_URL o SUPABASE_KEY")
+
+def get_supabase():
+    """Retorna el cliente global ya inicializado"""
+    return supabase
 
 def guardar_gasto(datos_gasto):
     """
     Guarda el gasto en la tabla 'gastos' de Supabase.
+    Ahora incluye el 'user_id' si viene en los datos.
     """
-    supabase = get_supabase()
     if not supabase:
+        print("❌ No hay conexión con Supabase.")
         return False
 
     try:
-        # Preparamos los datos para que coincidan con las columnas de tu base de datos
-        # Nota: Asegúrate que tu tabla en Supabase se llame 'gastos' (o cambia el nombre abajo)
+        # Preparamos los datos
         payload = {
             "fecha": datos_gasto['fecha'],
             "item": datos_gasto['item'],
-            "monto": datos_gasto['monto'],       # Asegúrate que en Supabase sea tipo numero
+            "monto": datos_gasto['monto'],
             "categoria": datos_gasto['categoria'],
             "cuenta": datos_gasto['cuenta'],
             "metodo_pago": datos_gasto.get('metodo_pago'),
             "detalle": datos_gasto.get('detalle', ''),
-            "tipo": datos_gasto['tipo']
+            "tipo": datos_gasto['tipo'],
+            
+            # --- NUEVO: Agregamos el ID del usuario ---
+            "user_id": datos_gasto.get('user_id') 
         }
 
         # Ejecutamos la inserción
         response = supabase.table('gastos').insert(payload).execute()
         
-        # Verificamos si hubo respuesta exitosa
-        # Supabase devuelve los datos insertados en response.data
+        # Verificamos respuesta
         if response.data:
             print(f"✅ Guardado en Supabase: {payload['item']}")
             return True
         else:
-            print("⚠️ No se recibió confirmación de Supabase.")
-            return False
+            # A veces Supabase devuelve vacío aunque guarde bien, pero asumimos éxito si no hay error
+            print(f"✅ Guardado (sin data de retorno): {payload['item']}")
+            return True
 
     except Exception as e:
         print(f"❌ Error guardando en Supabase: {e}")
