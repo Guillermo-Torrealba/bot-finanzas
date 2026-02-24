@@ -8,7 +8,7 @@ CLAVE_OPENAI = os.getenv("OPENAI_API_KEY")
 
 client = OpenAI(api_key=CLAVE_OPENAI)
 
-# --- NUEVA FUNCIÓN: TRANSCRIPCIÓN DE AUDIO (WHISPER) ---
+# --- FUNCIÓN: TRANSCRIPCIÓN DE AUDIO (WHISPER) ---
 def transcribir_audio(ruta_audio):
     try:
         with open(ruta_audio, "rb") as archivo:
@@ -21,6 +21,7 @@ def transcribir_audio(ruta_audio):
         print(f"❌ Error al transcribir: {e}")
         return ""
 
+# --- FUNCIÓN: INTERPRETAR GASTO (AHORA DETECTA PREGUNTAS) ---
 def interpretar_gasto(texto_usuario):
     # 1. Calculamos las fechas exactas con Python
     hoy = datetime.now()
@@ -30,7 +31,6 @@ def interpretar_gasto(texto_usuario):
     dia_semana = hoy.strftime("%A")
 
     # --- TU DICCIONARIO PERSONAL ---
-    # Agrega aquí tus reglas. La IA buscará esto primero.
     diccionario_personal = """
     REGLAS DE CATEGORIZACIÓN PARA GASTOS:
     - Si dice "promo", "piscola", "copete", "disco", "entrada", "tabaco", "papelillos", "filtros" -> Categoría: "Carrete"
@@ -52,13 +52,23 @@ def interpretar_gasto(texto_usuario):
     - Si dice "mesada" -> Categoría: "Mesada"
     """
     
-    # 2. Prompt con instrucciones de fecha claras
+    # 2. Prompt actualizado para detectar preguntas
     prompt = f"""
     HOY es {dia_semana}, {fecha_hoy}.
     AYER fue: {fecha_ayer}
     ANTEAYER fue: {fecha_antier}
 
     Analiza: "{texto_usuario}"
+    
+    PRIMERA DECISIÓN (IMPORTANTE):
+    ¿El usuario está haciendo una PREGUNTA sobre sus finanzas (ej: "¿Cuánto gasté?", "Resumen", "¿Qué es lo más caro?")?
+    SI ES PREGUNTA: Responde ÚNICAMENTE este JSON:
+    {{
+        "intencion": "pregunta",
+        "gastos": []
+    }}
+
+    SI NO ES PREGUNTA (Es un registro de gasto/ingreso), SIGUE ESTAS TAREAS:
     
     TAREAS:
     1. Tipo: "Gasto" o "Ingreso".
@@ -117,6 +127,7 @@ def interpretar_gasto(texto_usuario):
 
     Responde JSON:
     {{
+        "intencion": "registro",
         "gastos": [
             {{
                 "tipo": "Gasto",
@@ -141,15 +152,62 @@ def interpretar_gasto(texto_usuario):
         texto = response.choices[0].message.content.replace("```json", "").replace("```", "").strip()
         datos = json.loads(texto)
         
-        # --- DIAGNÓSTICO: ESTO SALDRÁ EN TU TERMINAL ---
         print(f"🧠 CEREBRO PENSÓ: {datos}") 
-        # -----------------------------------------------
         
         return datos
 
     except Exception as e:
         print(f"❌ Error ChatGPT: {e}")
         return {"gastos": []}
+
+# --- NUEVA FUNCIÓN: ANALISTA FINANCIERO 🧠 ---
+def analizar_consulta(texto_usuario, datos_gastos):
+    """
+    Recibe la pregunta del usuario y los datos crudos de Supabase.
+    Genera una respuesta en lenguaje natural.
+    """
+    # 1. Convertimos los datos a un formato de texto que GPT pueda leer
+    tabla_texto = "FECHA | ITEM | MONTO | CATEGORIA | DETALLE\n"
+    if not datos_gastos:
+        tabla_texto = "No hay registros recientes."
+    else:
+        for g in datos_gastos:
+            # Protegemos contra valores nulos con .get
+            fecha = g.get('fecha', '')
+            item = g.get('item', '')
+            monto = g.get('monto', 0)
+            cat = g.get('categoria', '')
+            detalle = g.get('detalle', '')
+            tabla_texto += f"{fecha} | {item} | {monto} | {cat} | {detalle}\n"
+
+    # 2. Creamos el prompt de analista
+    prompt_analisis = f"""
+    Actúa como un analista financiero personal amable y chileno.
+    
+    TIENES ESTOS DATOS DE LOS ÚLTIMOS GASTOS DEL USUARIO:
+    -----------------------------------------------------
+    {tabla_texto}
+    -----------------------------------------------------
+    
+    PREGUNTA DEL USUARIO: "{texto_usuario}"
+    
+    INSTRUCCIONES:
+    1. Responde la pregunta basándote EXCLUSIVAMENTE en la tabla de datos de arriba.
+    2. Si tienes que sumar, hazlo con cuidado.
+    3. Si no hay datos sobre lo que pregunta, dilo claramente.
+    4. Sé breve y directo (es un mensaje de WhatsApp).
+    5. Usa formato de moneda chilena ($10.000).
+    """
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "system", "content": prompt_analisis}],
+            temperature=0.3
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"Ups, me mareé analizando los datos: {e}"
 
 def normalizar_cuenta(texto_corto):
     prompt = f"""

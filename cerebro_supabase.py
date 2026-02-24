@@ -61,3 +61,20 @@ def guardar_gasto(datos_gasto):
     except Exception as e:
         print(f"❌ Error guardando en Supabase: {e}")
         return False
+
+def obtener_ultimos_gastos(user_id):
+    """Descarga los últimos 50 movimientos del usuario para análisis"""
+    if not supabase: return []
+    
+    try:
+        # Traemos los últimos 50 gastos, ordenados por fecha
+        response = supabase.table("gastos")\
+            .select("*")\
+            .eq("user_id", user_id)\
+            .order("fecha", desc=True)\
+            .limit(50)\
+            .execute()
+        return response.data
+    except Exception as e:
+        print(f"❌ Error leyendo gastos: {e}")
+        return []

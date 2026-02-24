@@ -2,9 +2,10 @@ import os
 import threading
 from flask import Flask, request
 import requests
-from cerebro_chatgpt import interpretar_gasto, normalizar_cuenta, transcribir_audio
-# IMPORTANTE: Asegúrate de que en cerebro_supabase.py estés exportando la variable 'supabase'
-from cerebro_supabase import guardar_gasto, supabase 
+# AGREGADO: 'analizar_consulta'
+from cerebro_chatgpt import interpretar_gasto, normalizar_cuenta, transcribir_audio, analizar_consulta
+# AGREGADO: 'obtener_ultimos_gastos'
+from cerebro_supabase import guardar_gasto, supabase, obtener_ultimos_gastos
 
 app = Flask(__name__)
 
@@ -68,11 +69,9 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
     if not texto_usuario:
         return
 
-    # --- 2. BLOQUE DE IDENTIDAD (NUEVO) 🕵️‍♂️ ---
-    # Buscamos quién es el dueño de este número antes de seguir
+    # --- 2. BLOQUE DE IDENTIDAD 🕵️‍♂️ ---
     user_id_detectado = None
     try:
-        # Consultamos la tabla 'usuarios_bot' que creamos
         resp_usuario = supabase.table("usuarios_bot").select("user_id").eq("celular", numero).execute()
         if resp_usuario.data:
             user_id_detectado = resp_usuario.data[0]["user_id"]
@@ -82,7 +81,7 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
     except Exception as e:
         print(f"❌ Error buscando identidad: {e}")
 
-    # --- 3. LÓGICA DE GASTOS ---
+    # --- 3. LÓGICA DE GASTOS Y PREGUNTAS ---
     try:
         # CASO A: EL USUARIO ESTÁ RESPONDIENDO QUÉ CUENTA USÓ (Hilo de conversación)
         if numero in memoria_usuarios:
@@ -104,7 +103,22 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
         # CASO B: MENSAJE NUEVO
         else:
             respuesta_ia = interpretar_gasto(texto_usuario)
-            if respuesta_ia.get("gastos"):
+            
+            # --- NUEVA LÓGICA: ¿ES PREGUNTA O GASTO? ---
+            if respuesta_ia.get("intencion") == "pregunta":
+                if not user_id_detectado:
+                    enviar_whatsapp(numero, "🔒 Necesito saber quién eres para analizar tus datos. (Tu número no está registrado).")
+                else:
+                    enviar_whatsapp(numero, "🧐 Déjame revisar tus números...")
+                    # 1. Traemos los datos de Supabase
+                    datos_gastos = obtener_ultimos_gastos(user_id_detectado)
+                    # 2. Analizamos con GPT
+                    respuesta_analisis = analizar_consulta(texto_usuario, datos_gastos)
+                    # 3. Respondemos
+                    enviar_whatsapp(numero, respuesta_analisis)
+
+            # --- LÓGICA ANTIGUA (Es un gasto) ---
+            elif respuesta_ia.get("gastos"):
                 gasto = respuesta_ia["gastos"][0]
                 
                 # INYECTAMOS EL ID
@@ -124,8 +138,10 @@ def procesar_mensaje_background(numero, texto_usuario, tipo_mensaje, mensaje_id,
                         enviar_whatsapp(numero, f"✅ Listo! {gasto['item']} (${gasto['monto']}) anotado en {gasto['cuenta']}.")
                     else:
                         enviar_whatsapp(numero, "❌ Error guardando en la base de datos.")
+            
+            # CASO C: NO ENTENDIÓ NADA
             else:
-                enviar_whatsapp(numero, "👋 No entendí si es un gasto.")
+                enviar_whatsapp(numero, "👋 No entendí si es un gasto o una pregunta.")
 
     except Exception as e:
         print(f"❌ Error lógica: {e}")
@@ -167,7 +183,6 @@ def recibir_mensaje():
                     audio_id = mensaje["voice"]["id"]
                 
                 if texto_usuario or audio_id:
-                    # Se usa threading para responder rápido a WhatsApp (200 OK) y procesar lento después
                     hilo = threading.Thread(target=procesar_mensaje_background, args=(numero, texto_usuario, tipo, msg_id, audio_id))
                     hilo.start()
 
