@@ -21,7 +21,7 @@ def transcribir_audio(ruta_audio):
         print(f"❌ Error al transcribir: {e}")
         return ""
 
-# --- FUNCIÓN: INTERPRETAR GASTO (AHORA DETECTA PREGUNTAS) ---
+# --- FUNCIÓN: INTERPRETAR GASTO ---
 def interpretar_gasto(texto_usuario):
     # 1. Calculamos las fechas exactas con Python
     hoy = datetime.now()
@@ -160,16 +160,21 @@ def interpretar_gasto(texto_usuario):
         print(f"❌ Error ChatGPT: {e}")
         return {"gastos": []}
 
-# --- NUEVA FUNCIÓN: ANALISTA FINANCIERO 🧠 ---
+# --- NUEVA FUNCIÓN: ANALISTA FINANCIERO CON CONTEXTO TEMPORAL 🧠 ---
 def analizar_consulta(texto_usuario, datos_gastos):
     """
     Recibe la pregunta del usuario y los datos crudos de Supabase.
     Genera una respuesta en lenguaje natural.
     """
-    # 1. Convertimos los datos a un formato de texto que GPT pueda leer
+    # 1. Calculamos la fecha de HOY para dársela al contexto
+    hoy_real = datetime.now()
+    fecha_hoy_str = hoy_real.strftime("%Y-%m-%d")
+    mes_actual_nombre = hoy_real.strftime("%B") # Ej: February
+
+    # 2. Convertimos los datos a un formato de texto que GPT pueda leer
     tabla_texto = "FECHA | ITEM | MONTO | CATEGORIA | DETALLE\n"
     if not datos_gastos:
-        tabla_texto = "No hay registros recientes."
+        tabla_texto = "No hay registros este mes."
     else:
         for g in datos_gastos:
             # Protegemos contra valores nulos con .get
@@ -180,11 +185,15 @@ def analizar_consulta(texto_usuario, datos_gastos):
             detalle = g.get('detalle', '')
             tabla_texto += f"{fecha} | {item} | {monto} | {cat} | {detalle}\n"
 
-    # 2. Creamos el prompt de analista
+    # 3. Creamos el prompt de analista CON FECHAS CLARAS
     prompt_analisis = f"""
     Actúa como un analista financiero personal amable y chileno.
     
-    TIENES ESTOS DATOS DE LOS ÚLTIMOS GASTOS DEL USUARIO:
+    CONTEXTO TEMPORAL:
+    - HOY ES: {fecha_hoy_str} (Mes de {mes_actual_nombre}).
+    - Los datos de abajo son TODOS los movimientos desde el día 1 de este mes hasta hoy.
+    
+    TABLA DE GASTOS DEL MES:
     -----------------------------------------------------
     {tabla_texto}
     -----------------------------------------------------
