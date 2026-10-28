@@ -30,16 +30,16 @@ login individual de Supabase Auth. El dashboard rechaza claves de servicio.
   autenticada de usuario. La clave de servicio no es válida para esa aplicación.
 - La rama local usa `claim_whatsapp_message` para deduplicar IDs en PostgreSQL y
   limita la cola a 32 mensajes/4 workers. La migración
-  `20261028193600_whatsapp_webhook_message_deduplication.sql` aún no se aplicó;
-  el bot fallará cerrado con HTTP 503 si se despliega antes que ella. La tabla
+  `20261028193600_whatsapp_webhook_message_deduplication.sql` ya se aplicó en
+  producción y se comprobó que solo `service_role` ejecuta la RPC. La tabla
   guarda solo el ID del mensaje y lo elimina tras 30 días.
 - El alta antigua aceptaba un teléfono escrito por la persona sin verificar
   propiedad. La app local ya no crea ese vínculo y el bot solo acepta filas con
   `verified_at` no nulo. La migración
-  `20261028193700_require_verified_whatsapp_phone.sql` revoca acceso cliente y
-  agrega el marcador; falta implementar un flujo de verificación del teléfono.
-  Los números existentes quedan sin verificar y el bot los rechazará hasta
-  completar ese flujo.
+  `20261028193700_require_verified_whatsapp_phone.sql` ya revocó el acceso
+  cliente y agregó el marcador; la asociación existente sigue sin verificar.
+  Falta implementar un flujo de verificación del teléfono y desplegar este bot;
+  los teléfonos no verificados deben rechazarse.
 - Cada mensaje debe corresponder exactamente a un `user_id` registrado antes
   de transcribir audio, llamar a OpenAI o escribir un movimiento; mensajes sin
   asociación única se rechazan.
