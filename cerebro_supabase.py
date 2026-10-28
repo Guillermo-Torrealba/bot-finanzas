@@ -13,7 +13,7 @@ if URL and KEY:
     try:
         supabase = create_client(URL, KEY)
     except Exception as e:
-        print(f"❌ Error inicializando Supabase: {e}")
+        print(f"❌ Error inicializando Supabase ({type(e).__name__}).")
 else:
     print("❌ Error: Faltan las variables SUPABASE_URL o SUPABASE_KEY")
 
@@ -28,6 +28,10 @@ def guardar_gasto(datos_gasto):
     if not supabase:
         print("❌ No hay conexión con Supabase.")
         return False
+    user_id = datos_gasto.get("user_id")
+    if not user_id:
+        print("❌ Movimiento rechazado: falta una cuenta autenticada.")
+        return False
 
     try:
         payload = {
@@ -39,20 +43,20 @@ def guardar_gasto(datos_gasto):
             "metodo_pago": datos_gasto.get('metodo_pago'),
             "detalle": datos_gasto.get('detalle', ''),
             "tipo": datos_gasto['tipo'],
-            "user_id": datos_gasto.get('user_id') 
+            "user_id": user_id
         }
 
         response = supabase.table('gastos').insert(payload).execute()
         
         if response.data:
-            print(f"✅ Guardado en Supabase: {payload['item']}")
+            print("✅ Movimiento guardado en Supabase.")
             return True
         else:
-            print(f"✅ Guardado (sin data de retorno): {payload['item']}")
+            print("✅ Movimiento guardado en Supabase.")
             return True
 
     except Exception as e:
-        print(f"❌ Error guardando en Supabase: {e}")
+        print(f"❌ Error guardando en Supabase ({type(e).__name__}).")
         return False
 
 def obtener_ultimos_gastos(user_id):
@@ -60,7 +64,8 @@ def obtener_ultimos_gastos(user_id):
     Descarga los gastos desde el PRIMER DÍA del mes actual.
     Esto arregla el error de cálculo en los resúmenes mensuales.
     """
-    if not supabase: return []
+    if not supabase or not user_id:
+        return []
     
     try:
         # 1. Calculamos el día 1 del mes actual (Ej: 2026-02-01)
@@ -75,8 +80,8 @@ def obtener_ultimos_gastos(user_id):
             .order("fecha", desc=True)\
             .execute()
             
-        print(f"📅 Descargados {len(response.data)} movimientos desde {primer_dia_mes}")
+        print("📅 Consulta de movimientos completada.")
         return response.data
     except Exception as e:
-        print(f"❌ Error leyendo gastos: {e}")
+        print(f"❌ Error leyendo gastos ({type(e).__name__}).")
         return []

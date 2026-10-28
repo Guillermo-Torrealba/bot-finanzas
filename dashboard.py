@@ -1,3 +1,6 @@
+import base64
+import json
+import os
 import streamlit as st
 import pandas as pd
 from supabase import create_client
@@ -8,28 +11,93 @@ import calendar
 # --- CONFIGURACIÓN DE PÁGINA (ESTILO MONEYBOARD) ---
 st.set_page_config(page_title="Mis Finanzas Pro", page_icon="💳", layout="wide")
 
-# --- CONEXIÓN SUPABASE ---
-try:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-except:
-    import os
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
+def _config_value(name):
+    try:
+        value = st.secrets.get(name)
+    except Exception:
+        value = None
+    return value or os.getenv(name)
 
-supabase = create_client(url, key)
+
+def _is_public_supabase_key(key):
+    """Accept only a publishable key or a legacy JWT with role=anon."""
+    if not isinstance(key, str):
+        return False
+    if key.startswith("sb_publishable_"):
+        return True
+    parts = key.split(".")
+    if len(parts) != 3:
+        return False
+    try:
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        return claims.get("role") == "anon"
+    except Exception:
+        return False
+
+
+# This dashboard must use a public key plus a per-user Supabase Auth session.
+# A service-role key would bypass RLS for every user who opens this UI.
+url = _config_value("SUPABASE_URL")
+key = _config_value("SUPABASE_PUBLISHABLE_KEY") or _config_value("SUPABASE_KEY")
+if not url or not key or not _is_public_supabase_key(key):
+    st.error("El dashboard no tiene una configuración Supabase pública y segura.")
+    st.stop()
+
+if "_supabase_client" not in st.session_state:
+    st.session_state["_supabase_client"] = create_client(url, key)
+supabase = st.session_state["_supabase_client"]
+
+if not st.session_state.get("supabase_user_id"):
+    st.title("Acceso a Mis Finanzas Pro")
+    with st.form("supabase_login", clear_on_submit=True):
+        email = st.text_input("Correo", autocomplete="email")
+        password = st.text_input("Contraseña", type="password")
+        submitted = st.form_submit_button("Iniciar sesión")
+    if submitted:
+        try:
+            response = supabase.auth.sign_in_with_password(
+                {"email": email.strip(), "password": password}
+            )
+            if response.user is None:
+                raise ValueError("No se recibió una sesión de usuario.")
+            st.session_state["supabase_user_id"] = response.user.id
+            st.rerun()
+        except Exception:
+            st.error("No se pudo iniciar sesión. Revisa tus credenciales.")
+    st.stop()
+
+try:
+    current_user = supabase.auth.get_user().user
+    if current_user is None:
+        raise ValueError("No hay usuario autenticado.")
+    user_id = current_user.id
+    st.session_state["supabase_user_id"] = user_id
+except Exception:
+    try:
+        supabase.auth.sign_out()
+    except Exception:
+        pass
+    st.session_state.pop("supabase_user_id", None)
+    st.error("La sesión expiró. Inicia sesión nuevamente.")
+    st.stop()
+
+if st.sidebar.button("Cerrar sesión"):
+    supabase.auth.sign_out()
+    st.session_state.pop("supabase_user_id", None)
+    st.rerun()
 
 # --- FUNCIONES DE BASE DE DATOS ---
-def cargar_datos():
-    # Traemos todo. En una app real masiva, filtrarías por fecha en la query.
-    response = supabase.table('gastos').select("*").order('fecha', desc=True).execute()
+def cargar_datos(owner_id):
+    response = (supabase.table('gastos').select("*")
+                .eq('user_id', owner_id).order('fecha', desc=True).execute())
     df = pd.DataFrame(response.data)
     if not df.empty:
         df['fecha'] = pd.to_datetime(df['fecha'])
         df['monto'] = pd.to_numeric(df['monto'])
     return df
 
-def guardar_movimiento(item, monto, categoria, cuenta, fecha, tipo):
+def guardar_movimiento(item, monto, categoria, cuenta, fecha, tipo, owner_id):
     # Si es Gasto, guardamos el monto tal cual (la lógica de resta se hace visualmente)
     # Opcional: Podríamos guardarlo negativo, pero mejor mantenerlo positivo y restar en la UI
     payload = {
@@ -38,23 +106,33 @@ def guardar_movimiento(item, monto, categoria, cuenta, fecha, tipo):
         "categoria": categoria,
         "cuenta": cuenta,
         "fecha": str(fecha),
-        "tipo": tipo
+        "tipo": tipo,
+        "user_id": owner_id,
     }
     supabase.table('gastos').insert(payload).execute()
 
-def actualizar_registro(changes, df_original):
+def actualizar_registro(changes, df_original, owner_id):
+    editable_columns = {"fecha", "item", "categoria", "monto", "tipo", "cuenta"}
     # Procesar ediciones de la tabla interactiva
     for index, row_changes in changes['edited_rows'].items():
         id_registro = df_original.iloc[index]['id']
+        row_changes = {
+            key: value for key, value in row_changes.items()
+            if key in editable_columns
+        }
+        if not row_changes:
+            continue
         # Convertimos el int64 de pandas a int nativo de python para JSON
         if 'id' in row_changes: del row_changes['id'] 
         
-        supabase.table('gastos').update(row_changes).eq('id', int(id_registro)).execute()
+        (supabase.table('gastos').update(row_changes)
+         .eq('id', int(id_registro)).eq('user_id', owner_id).execute())
     
     # Procesar borrados
     for index in changes['deleted_rows']:
         id_registro = df_original.iloc[index]['id']
-        supabase.table('gastos').delete().eq('id', int(id_registro)).execute()
+        (supabase.table('gastos').delete()
+         .eq('id', int(id_registro)).eq('user_id', owner_id).execute())
 
 # --- INTERFAZ SIDEBAR (Filtros y Carga) ---
 with st.sidebar:
@@ -70,7 +148,7 @@ with st.sidebar:
     mes_num = meses.index(mes_sel) + 1
 
 # --- CARGA DE DATOS ---
-df = cargar_datos()
+df = cargar_datos(user_id)
 
 # --- FORMULARIO DE INGRESO (ARRIBA) ---
 with st.expander("➕ Nuevo Movimiento (Gasto o Ingreso)", expanded=False):
@@ -94,7 +172,7 @@ with st.expander("➕ Nuevo Movimiento (Gasto o Ingreso)", expanded=False):
         cuenta = col6.selectbox("Cuenta", ["Débito BICE", "Crédito BICE", "Efectivo", "Mercado Pago"])
         
         if st.form_submit_button("💾 Guardar Movimiento"):
-            guardar_movimiento(item, monto, categoria, cuenta, fecha, tipo)
+            guardar_movimiento(item, monto, categoria, cuenta, fecha, tipo, user_id)
             st.success("Guardado exitosamente")
             st.rerun()
 
@@ -171,11 +249,11 @@ if not df.empty:
                 try:
                     # Nota: Para 'added_rows' es mejor usar el formulario de arriba, 
                     # aquí nos enfocamos en update/delete para no complicar la lógica
-                    actualizar_registro(changes, df_filtrado)
+                    actualizar_registro(changes, df_filtrado, user_id)
                     st.success("Cambios sincronizados con la nube ☁️")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Error al guardar: {e}")
+                    st.error("No se pudieron guardar los cambios. Inténtalo nuevamente.")
             else:
                 st.info("No detecté cambios para guardar.")
 
